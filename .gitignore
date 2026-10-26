@@ -1,6 +1,9 @@
-.DS_Store
-*.rbxl.lock
-*.rbxlx.lock
 *.rbxl
+*.rbxl.lock
 *.rbxlx
+*.rbxlx.lock
+.DS_Store
+assets/source/
 node_modules/
+tools/node_modules/
+DinoParkTycoon_MVP.zip

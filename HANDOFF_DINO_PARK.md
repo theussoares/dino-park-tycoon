@@ -466,3 +466,25 @@ O objetivo inicial não é lançar um jogo enorme nem garantir viralização.
 É obter uma pequena experiência divertida, funcional e testável, usando
 ferramentas gratuitas, e evoluir com base no comportamento real dos
 jogadores.
+
+------------------------------------------------------------------------
+
+# 10. Atualização de arquitetura e decisões (2026-10-26)
+
+## Estado
+MVP implementado em Luau e **verificado só estaticamente** (ver `TEST_REPORT.md`). Nunca executado no Studio.
+
+## Decisões
+- **Fluxo:** Opção B (Command Bar). `tools/build.js` gera `installer/Parte2_Scripts.lua` a partir de `src/` (fonte da verdade). Rojo não usado.
+- **Lógica pura** em `Shared/Logic.lua` (sem APIs Roblox): servidor é autoridade; testável com fengari.
+- **Dados** (`DataService`): `GetAsync` com 3 tentativas; falha de carga => `canSave=false` (nunca sobrescreve progresso real); `UpdateAsync` ao sair, no `BindToClose` e a cada 120 s se houver mudança; `schemaVersion` e `Logic.migrate` sanitizam tudo.
+- **Parques** (`ParkService`): 4 parques estáticos criados no início; `refresh` redesenha dinos/cercas/decorações; o cliente nunca informa qual parque é o dele.
+- **Remotes** (`GameService`): uma `RemoteFunction` (`Request`) com lista fixa de ações, validação de tipos, limite de 0,12 s por jogador; `State`/`Notify` só servidor→cliente. Preço, raridade, tempo e saldo vêm sempre do servidor.
+- **Ovos:** primeiro ovo sempre Leafling; chances exibidas no painel Ovo (70/25/5).
+- **Offline:** 50% da renda, teto 8 h, calculado no servidor com `os.time()`.
+- **Loja:** rotação a cada 30 min, determinística (Park-Miller) pelo horário Unix; 4 de 9 itens cosméticos.
+- **Interface:** criada por código no cliente; `UIScale` para telas menores.
+- **Assets:** nenhum externo em uso; ver `ASSET_CATALOG.md`.
+
+## Pendências sugeridas
+Testar no Studio e corrigir; DataStore com session lock; NPCs visitantes; importar dinos da Quaternius; Pebbleback/Embercrest com mais detalhe; mobile; métricas da seção 7.

@@ -1,34 +1,49 @@
 # Dino Park Tycoon (nome provisório)
 
-Jogo Roblox de parque de dinossauros. Visão completa: `HANDOFF_DINO_PARK.md` (coloque uma cópia nesta pasta).
+Jogo Roblox de parque de dinossauros: choque ovos, coloque dinos no habitat, ganhe moedas com visitantes, melhore o parque e decore com itens da loja rotativa. Tudo (cenário, dinossauros, UI) é gerado por código — sem assets pagos.
 
-## Fase 0 — decisões
+> **Estado:** implementado e verificado **estaticamente** (sintaxe + 13 testes da lógica fora do Roblox). **Nunca foi executado no Roblox Studio.** Veja `TEST_REPORT.md`.
 
-- **Ambiente:** macOS (Apple Silicon). Git e Roblox Studio **não foram verificados** por mim no seu Mac; confirme `git --version` no Terminal.
-- **Fluxo escolhido: Opção B (instalador por Command Bar).** Rojo não está instalado e eu não consigo instalá-lo no seu Mac; Opção B não exige nada além do Studio.
-- Sem Blender, sem assets pagos, sem Creator Store.
+## Jogar (5 passos)
 
-## Fase 1 — primeiro cenário (5 passos)
+1. Roblox Studio > **New > Baseplate**. Apague `Baseplate` e `SpawnLocation` do Explorer. Salve o lugar (**File > Save to Roblox** para poder testar o DataStore).
+2. **View > Command Bar**. Cole **todo** o `installer/Parte1_Cenario.lua` e Enter (cria o mapa).
+3. Cole **todo** o `installer/Parte2_Scripts.lua` e Enter (cria scripts e interface).
+4. **Home > Game Settings > Players > Max Players = 4** (há 4 parques).
+5. **Play (F5)**. Siga o tutorial: Ovo > Incubar > Coletar; Inventário > Colocar; Melhorias.
 
-1. Abra o Roblox Studio > **Baseplate** (novo lugar).
-2. No Explorer, apague o `Baseplate` e o `SpawnLocation` padrão (evita spawn duplicado).
-3. Menu **View > Command Bar**.
-4. Abra `installer/Phase1_Installer.lua`, copie TUDO, cole na Command Bar e pressione **Enter**.
-5. Pressione **Play (F5)**. Esperado: você nasce perto do portão "Dino Park", anda pelo caminho até o habitat cercado, vê o Leafling com nome flutuante; ao chegar perto, aparece o botão **Cumprimentar** (tecla E) e ele dá dois pulinhos.
+Para salvar progresso no Studio: **Game Settings > Security > Enable Studio Access to API Services**, com o lugar publicado/salvo na nuvem. Sem isso o jogo funciona, mas avisa "sem salvamento".
 
-Rodar de novo: o script avisa que já existe e não altera nada. Para recriar, mude `REPLACE_EXISTING` para `true` (só apaga `Workspace.DinoParkMVP`).
+Rodar de novo: os instaladores param sem mexer em nada se já existir. `REPLACE_EXISTING = true` no topo recria só os objetos do jogo.
 
-## Estado dos testes
+## Estrutura
 
-- **Implementado:** cenário, spawn, habitat, portão, árvores, luz, Leafling de Parts, interação.
-- **Executado:** nada. Não tenho o Studio; o código **não foi rodado**.
-- **Depende de validação manual:** tudo acima. Se der erro na Command Bar, cole a mensagem para eu corrigir.
+```
+src/                     código-fonte Luau (fonte da verdade)
+  ReplicatedStorage/Shared/{Config,Logic,DinoModels}.lua
+  ServerScriptService/DinoParkMain.server.lua
+  ServerScriptService/DinoParkServices/{DataService,ParkService,GameService}.lua
+  StarterPlayer/StarterPlayerScripts/DinoParkClient.client.lua
+scene/SceneBuilder.lua   cenário estático
+installer/               GERADO por tools/build.js (cole na Command Bar)
+tools/                   build.js, check.js, globals.js, xref.js
+tests/                   logic_test.lua + run_tests.js
+assets/                  pack Quaternius (CC0) baixado, não integrado — ver ASSET_CATALOG.md
+```
 
-## Problemas conhecidos / dúvidas
+Editar o jogo: mude `src/`, rode `cd tools && node build.js` e recole `installer/Parte2_Scripts.lua` com `REPLACE_EXISTING = true`.
 
-- Script embutido (`LeaflingInteraction`) é gravado via `Script.Source` na Command Bar; deve funcionar, mas não foi testado.
-- Fonte `FredokaOne` e materiais podem variar por versão do Studio.
+## Verificações (precisa de Node)
 
-## Próximo passo
+```
+cd tools && npm install   # luaparse + fengari
+node build.js && node check.js && node globals.js <arquivos> && node xref.js && node ../tests/run_tests.js
+```
 
-Validar a Fase 1. Depois: moedas, ovo, incubação (Fase 2) em módulos `ServerScriptService`/`ReplicatedStorage`.
+## Publicar como teste privado
+
+Studio: **File > Publish to Roblox**, deixe a experiência **Privada**. Não publiquei nada. Não há compras com Robux no MVP.
+
+## Documentos
+
+`HANDOFF_DINO_PARK.md` (visão + arquitetura), `ASSET_CATALOG.md`, `TEST_REPORT.md`.
