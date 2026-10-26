@@ -185,6 +185,11 @@ local function onPlayerAdded(player)
 		DataService.release(player)
 		return
 	end
+	if session.locked then
+		DataService.release(player) -- não grava: o perfil pertence a outro servidor
+		player:Kick("Seus dados estão em uso em outro servidor. Tente entrar de novo em alguns minutos.")
+		return
+	end
 	local index = ParkService.claim(player)
 	if not index then
 		player:Kick("Servidor cheio: todos os parques estão ocupados.")
@@ -260,15 +265,27 @@ function GameService.start()
 			if sinceSave >= Config.AutosaveSeconds then
 				sinceSave = 0
 				for player in pairs(DataService.sessions()) do
-					task.spawn(DataService.save, player, false)
+					-- touch=true: grava mesmo sem mudanças para renovar a trava de sessão
+					task.spawn(DataService.save, player, false, true, false)
 				end
 			end
 		end
 	end)
 
 	game:BindToClose(function()
+		-- salva todos em paralelo, com espera limitada (o Roblox encerra o servidor após ~30 s)
+		local pending = 0
 		for player in pairs(DataService.sessions()) do
-			DataService.save(player, true)
+			pending = pending + 1
+			task.spawn(function()
+				DataService.save(player, true, true, true)
+				pending = pending - 1
+			end)
+		end
+		local waited = 0
+		while pending > 0 and waited < Config.ShutdownMaxWait do
+			task.wait(0.5)
+			waited = waited + 0.5
 		end
 	end)
 end

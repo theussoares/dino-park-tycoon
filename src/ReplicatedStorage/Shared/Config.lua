@@ -25,6 +25,11 @@ Config.ShopSlots = 4
 Config.RequestMinInterval = 0.12
 Config.AutosaveSeconds = 120
 Config.MinSaveGap = 10
+Config.LockSeconds = 300 -- trava de sessão expira se o servidor dono sumir (renovada a cada autosave)
+Config.LockRetries = 5
+Config.LockRetryWait = 3
+Config.SaveRetries = 3
+Config.ShutdownMaxWait = 25
 
 Config.BaseSlots = 1
 

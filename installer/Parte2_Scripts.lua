@@ -64,6 +64,11 @@ Config.ShopSlots = 4
 Config.RequestMinInterval = 0.12
 Config.AutosaveSeconds = 120
 Config.MinSaveGap = 10
+Config.LockSeconds = 300 -- trava de sessão expira se o servidor dono sumir (renovada a cada autosave)
+Config.LockRetries = 5
+Config.LockRetryWait = 3
+Config.SaveRetries = 3
+Config.ShutdownMaxWait = 25
 
 Config.BaseSlots = 1
 
@@ -231,6 +236,37 @@ function Logic.migrate(raw, cfg, now)
 		end
 	end
 	return d
+end
+
+-- Trava de sessão: impede dois servidores de salvarem o mesmo jogador (evita duplicar/perder progresso).
+-- O registro salvo é uma cópia rasa dos dados + campo _lock = { jobId, t }.
+function Logic.lockedByOther(old, jobId, now, lockSeconds)
+	if type(old) ~= "table" or type(old._lock) ~= "table" then
+		return false
+	end
+	local l = old._lock
+	if type(l.jobId) ~= "string" or type(l.t) ~= "number" then
+		return false
+	end
+	if l.jobId == jobId then
+		return false
+	end
+	return now - l.t < lockSeconds
+end
+
+-- release=true remove a trava (saída do jogador); caso contrário carimba/renova.
+function Logic.record(data, jobId, now, release)
+	local out = {}
+	if type(data) == "table" then
+		for k, v in pairs(data) do
+			out[k] = v
+		end
+	end
+	out._lock = nil
+	if not release then
+		out._lock = { jobId = jobId, t = now }
+	end
+	return out
 end
 
 function Logic.slots(data, cfg)
@@ -722,8 +758,8 @@ servicesFolder.Name = "DinoParkServices"
 local serviceFiles = {
 	{ "ModuleScript", "DataService", [==[
 --!nonstrict
--- Persistência com DataStoreService: carrega com tentativas, nunca sobrescreve dados válidos com
--- padrões após falha de carga (canSave=false), salva com UpdateAsync e limite de frequência.
+-- Persistência com DataStoreService: trava de sessão (UpdateAsync), carga com tentativas, nunca sobrescreve
+-- dados válidos com padrões após falha de carga (canSave=false), salvamento com retry/backoff e limite de frequência.
 local DataStoreService = game:GetService("DataStoreService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -732,7 +768,7 @@ local Config = require(Shared:WaitForChild("Config"))
 local Logic = require(Shared:WaitForChild("Logic"))
 
 local DataService = {}
-local sessions = {} -- [Player] = { data=, canSave=, dirty=, lastSave=, loadFailed= }
+local sessions = {} -- [Player] = { data=, canSave=, dirty=, lastSave=, isNew=, locked= }
 
 local store = nil
 do
@@ -750,29 +786,51 @@ local function keyFor(player)
 	return "u_" .. tostring(player.UserId)
 end
 
--- Carrega (yield). Sempre devolve uma sessão; canSave=false se o carregamento falhou.
+-- Tenta reservar o perfil. Devolve "ok", raw | "locked" | "error".
+local function claim(player)
+	local status, raw = "error", nil
+	local ok, err = pcall(function()
+		store:UpdateAsync(keyFor(player), function(old)
+			local now = os.time()
+			if Logic.lockedByOther(old, game.JobId, now, Config.LockSeconds) then
+				status = "locked"
+				return nil -- cancela a escrita
+			end
+			status = "ok"
+			raw = old
+			return Logic.record(old, game.JobId, now, false)
+		end)
+	end)
+	if not ok then
+		warn("[DinoPark] erro ao reservar perfil de " .. player.Name .. ": " .. tostring(err))
+		return "error"
+	end
+	return status, raw
+end
+
+-- Carrega (yield). Sempre devolve uma sessão. canSave=false se não foi possível ler (nunca salvamos por cima).
+-- session.locked=true: dados em uso em outro servidor (o GameService remove o jogador).
 function DataService.load(player)
 	local now = os.time()
-	local raw, loaded = nil, false
+	local raw, status = nil, "error"
 	if store then
-		for attempt = 1, 3 do
-			local ok, result = pcall(function()
-				return store:GetAsync(keyFor(player))
-			end)
-			if ok then
-				raw, loaded = result, true
+		for attempt = 1, Config.LockRetries do
+			status, raw = claim(player)
+			if status == "ok" then
 				break
 			end
-			warn(("[DinoPark] Falha ao carregar %s (tentativa %d): %s"):format(player.Name, attempt, tostring(result)))
-			task.wait(1.5 * attempt)
+			warn(("[DinoPark] perfil de %s: %s (tentativa %d)"):format(player.Name, status, attempt))
+			task.wait(Config.LockRetryWait)
 		end
 	end
+	local loaded = status == "ok"
 	local session = {
 		data = Logic.migrate(raw, Config, now),
-		canSave = loaded, -- se não carregou, NÃO salvamos (evita apagar progresso real)
+		canSave = loaded,
 		dirty = false,
-		lastSave = 0,
-		isNew = loaded and raw == nil,
+		lastSave = os.clock(),
+		isNew = loaded and (raw == nil or raw.schemaVersion == nil),
+		locked = status == "locked",
 	}
 	sessions[player] = session
 	return session
@@ -789,33 +847,61 @@ function DataService.markDirty(player)
 	end
 end
 
--- Salva se necessário. force=true ignora o intervalo mínimo (saída do jogador / desligamento).
-function DataService.save(player, force)
+-- Uma tentativa de gravação. release=true remove a trava. Cancela se outro servidor assumiu o perfil.
+local function writeOnce(player, session, release)
+	local lostLock = false
+	local ok, err = pcall(function()
+		store:UpdateAsync(keyFor(player), function(old)
+			local now = os.time()
+			if Logic.lockedByOther(old, game.JobId, now, Config.LockSeconds) then
+				lostLock = true
+				return nil
+			end
+			session.data.lastSeen = now
+			return Logic.record(session.data, game.JobId, now, release)
+		end)
+	end)
+	if not ok then
+		return false, tostring(err)
+	end
+	if lostLock then
+		session.canSave = false -- outro servidor tem o perfil: parar de salvar para não duplicar
+		return false, "perfil em uso por outro servidor"
+	end
+	return true
+end
+
+-- Salva se necessário. force=true ignora o intervalo mínimo e tenta de novo com backoff.
+-- touch=true grava mesmo sem mudanças (renova a trava). release=true libera a trava.
+function DataService.save(player, force, touch, release)
 	local s = sessions[player]
 	if not s or not s.canSave or not store then
 		return false
 	end
-	if not force and (not s.dirty or os.clock() - s.lastSave < Config.MinSaveGap) then
+	if not force and not touch and (not s.dirty or os.clock() - s.lastSave < Config.MinSaveGap) then
 		return false
 	end
-	s.data.lastSeen = os.time()
-	local snapshot = s.data
-	local ok, err = pcall(function()
-		store:UpdateAsync(keyFor(player), function()
-			return snapshot
-		end)
-	end)
-	if ok then
-		s.dirty = false
-		s.lastSave = os.clock()
-		return true
+	local attempts = force and Config.SaveRetries or 1
+	for attempt = 1, attempts do
+		local ok, err = writeOnce(player, s, release)
+		if ok then
+			s.dirty = false
+			s.lastSave = os.clock()
+			return true
+		end
+		warn(("[DinoPark] Falha ao salvar %s (tentativa %d): %s"):format(player.Name, attempt, tostring(err)))
+		if not s.canSave then
+			return false
+		end
+		if attempt < attempts then
+			task.wait(attempt * 1.5)
+		end
 	end
-	warn(("[DinoPark] Falha ao salvar %s: %s"):format(player.Name, tostring(err)))
 	return false
 end
 
 function DataService.release(player)
-	DataService.save(player, true)
+	DataService.save(player, true, true, true)
 	sessions[player] = nil
 end
 
@@ -1248,6 +1334,11 @@ local function onPlayerAdded(player)
 		DataService.release(player)
 		return
 	end
+	if session.locked then
+		DataService.release(player) -- não grava: o perfil pertence a outro servidor
+		player:Kick("Seus dados estão em uso em outro servidor. Tente entrar de novo em alguns minutos.")
+		return
+	end
 	local index = ParkService.claim(player)
 	if not index then
 		player:Kick("Servidor cheio: todos os parques estão ocupados.")
@@ -1323,15 +1414,27 @@ function GameService.start()
 			if sinceSave >= Config.AutosaveSeconds then
 				sinceSave = 0
 				for player in pairs(DataService.sessions()) do
-					task.spawn(DataService.save, player, false)
+					-- touch=true: grava mesmo sem mudanças para renovar a trava de sessão
+					task.spawn(DataService.save, player, false, true, false)
 				end
 			end
 		end
 	end)
 
 	game:BindToClose(function()
+		-- salva todos em paralelo, com espera limitada (o Roblox encerra o servidor após ~30 s)
+		local pending = 0
 		for player in pairs(DataService.sessions()) do
-			DataService.save(player, true)
+			pending = pending + 1
+			task.spawn(function()
+				DataService.save(player, true, true, true)
+				pending = pending - 1
+			end)
+		end
+		local waited = 0
+		while pending > 0 and waited < Config.ShutdownMaxWait do
+			task.wait(0.5)
+			waited = waited + 0.5
 		end
 	end)
 end

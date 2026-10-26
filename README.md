@@ -47,3 +47,7 @@ Studio: **File > Publish to Roblox**, deixe a experiência **Privada**. Não pub
 ## Documentos
 
 `HANDOFF_DINO_PARK.md` (visão + arquitetura), `ASSET_CATALOG.md`, `TEST_REPORT.md`.
+
+## Skills de IA (roblox-skills)
+Instaladas em `.claude/skills/roblox-skills/`; guia em `CLAUDE.md`, roadmap em `ROADMAP.md`. Para o Studio MCP: Studio > Assistant > Manage MCP Servers > habilitar, e abrir este projeto no Claude Code (usa `.mcp.json`).
+Após editar `src/`: `node tools/build.js` e cole `installer/Parte2_Scripts.lua` de novo.

@@ -36,3 +36,9 @@ Observação de método: o código evita sintaxe exclusiva do Luau (sem `continu
 ## Limitação principal
 
 Não consigo afirmar que o jogo funciona no Roblox: nunca rodou no Studio. Falhas de API do Roblox (nome de propriedade, ordem de carregamento, permissões) só aparecem em runtime. Se algo falhar, cole a mensagem do Output para correção.
+
+## Atualização: trava de sessão + roblox-skills
+- Novo: `Logic.lockedByOther`/`Logic.record`; `DataService` reserva o perfil com `UpdateAsync` (5 tentativas), renova a trava a cada autosave, libera ao sair, expulsa o jogador se o perfil está em outro servidor; `BindToClose` salva em paralelo (máx. 25 s).
+- Executado: `tools/check.js` (sintaxe), `globals.js`, `xref.js`, `tests/run_tests.js` → 14 passam, 0 falham (inclui teste da trava).
+- NÃO executado: nada no Studio. A trava, o kick e o BindToClose dependem de teste real (2 servidores/contas) com API Services ligado.
+- Studio MCP: `.mcp.json` preparado conforme a documentação oficial; **não conectado/verificado** (roda no seu Mac).

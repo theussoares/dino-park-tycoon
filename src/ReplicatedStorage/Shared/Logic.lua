@@ -97,6 +97,37 @@ function Logic.migrate(raw, cfg, now)
 	return d
 end
 
+-- Trava de sessão: impede dois servidores de salvarem o mesmo jogador (evita duplicar/perder progresso).
+-- O registro salvo é uma cópia rasa dos dados + campo _lock = { jobId, t }.
+function Logic.lockedByOther(old, jobId, now, lockSeconds)
+	if type(old) ~= "table" or type(old._lock) ~= "table" then
+		return false
+	end
+	local l = old._lock
+	if type(l.jobId) ~= "string" or type(l.t) ~= "number" then
+		return false
+	end
+	if l.jobId == jobId then
+		return false
+	end
+	return now - l.t < lockSeconds
+end
+
+-- release=true remove a trava (saída do jogador); caso contrário carimba/renova.
+function Logic.record(data, jobId, now, release)
+	local out = {}
+	if type(data) == "table" then
+		for k, v in pairs(data) do
+			out[k] = v
+		end
+	end
+	out._lock = nil
+	if not release then
+		out._lock = { jobId = jobId, t = now }
+	end
+	return out
+end
+
 function Logic.slots(data, cfg)
 	return cfg.BaseSlots + data.upgrades.slots
 end

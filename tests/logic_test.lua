@@ -160,5 +160,19 @@ test("migrate: sanitiza dados corrompidos", function()
 	eq(d.incubating.readyAt, NOW + 5)
 end)
 
+test("trava de sessão: outro servidor, expiração e liberação", function()
+	local rec = Logic.record({ coins = 5 }, "A", 1000, false)
+	eq(rec._lock.jobId, "A"); eq(rec.coins, 5)
+	eq(Logic.lockedByOther(rec, "A", 1010, 300), false)
+	eq(Logic.lockedByOther(rec, "B", 1010, 300), true)
+	eq(Logic.lockedByOther(rec, "B", 1400, 300), false)
+	eq(Logic.lockedByOther(nil, "B", 1010, 300), false)
+	eq(Logic.lockedByOther({ _lock = "x" }, "B", 1010, 300), false)
+	local rel = Logic.record(rec, "A", 1020, true)
+	eq(rel._lock, nil); eq(Logic.lockedByOther(rel, "B", 1021, 300), false)
+	eq(rec._lock.jobId, "A") -- original não é alterado
+	local d = Logic.migrate(rec, Config, 1100); eq(d._lock, nil)
+end)
+
 print(("RESULTADO: %d passaram, %d falharam"):format(passed, failed))
 if failed > 0 then error("testes falharam") end
