@@ -42,3 +42,24 @@ Não consigo afirmar que o jogo funciona no Roblox: nunca rodou no Studio. Falha
 - Executado: `tools/check.js` (sintaxe), `globals.js`, `xref.js`, `tests/run_tests.js` → 14 passam, 0 falham (inclui teste da trava).
 - NÃO executado: nada no Studio. A trava, o kick e o BindToClose dependem de teste real (2 servidores/contas) com API Services ligado.
 - Studio MCP: `.mcp.json` preparado conforme a documentação oficial; **não conectado/verificado** (roda no seu Mac).
+
+## Playtest no Studio via MCP (2026-10-26)
+Ambiente: Roblox Studio no Mac do usuário ("Place1", lugar **não publicado**), conectado pelo Studio MCP. Solo, 1 jogador, viewport 1511×781.
+
+Instalação (executada de verdade):
+- `installer/Parte1_Cenario.lua` rodado via `execute_luau` (modo Edit): cenário criado sem erro; Workspace não tinha Baseplate padrão.
+- `installer/Parte2_Scripts.lua` enviado em 4 partes e executado com `loadstring` (HTTP desligado no lugar; não foi alterado). Conteúdo conferido no Studio: 64927 bytes, checksum idêntico ao arquivo local. Criou Shared(3), DinoParkServices(3), DinoParkMain, DinoParkClient.
+
+Play (executado de verdade):
+- Console: apenas `DataStore indisponível: You must publish this place...` (esperado: lugar não publicado ⇒ `canSave=false`, UI mostra "(sem salvamento)") e `Servidor iniciado.` Nenhum erro de script.
+- 4 parques gerados; jogador recebeu o Plot1 com placa "Parque de <nome>"; tela de carregamento some ao receber o estado.
+- Loop completo chamado pelo cliente via `Request` (não por cliques na UI): incubar → "Ainda não chocou" → após 12 s coletar (Leafling, como previsto) → colocar → recolocar recusado → comprar ovo → melhoria de renda → "Meu Parque" teleporta → compra na loja → ação desconhecida e payload inválido recusados. Moedas batem com a conta (100+50+75−50−100+100 = 175); renda +3 por pagamento (2×1,25 arredondado); a renda passiva entrou.
+
+Bugs encontrados e corrigidos (em `src/StarterPlayer/StarterPlayerScripts/DinoParkClient.client.lua`):
+1. **Barra inferior fora da tela / painel descentralizado**: o `UIScale` (1,25) também escalava o `Root` (`fromScale(1,1)`), que ficava com 125% da tela; a barra caía em y=823 numa tela de 781 px. Correção: `root.Size = 1/scale`. Verificado depois da correção: Root = 1511×723 (área útil), barra em y=643–710, centralizada; captura de tela confirma.
+2. **Texto "Renda ... (sem salvamento)" cortado** no HUD de 230 px. HUD alargado para 300 px; `TextFits = true` verificado.
+- A correção foi aplicada no script do Studio por substituição e conferida por checksum (17623 bytes) contra `src/`.
+
+Ainda não verificado:
+- Uma "camada" verde com textura de folhas no alto das capturas de tela. Um raycast para cima a partir da câmera não acertou nenhuma peça; pode ser artefato da captura ou do material Grass. Precisa ser olhado no viewport.
+- Cliques reais nos botões, painéis abertos (só a barra/HUD/tutorial foram vistos), modelos dos dinos/decorações vistos de perto, escala < 1 (telas pequenas/mobile), DataStore real, multiplayer, BindToClose.

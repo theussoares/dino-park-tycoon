@@ -1553,7 +1553,10 @@ local scale = Instance.new("UIScale")
 scale.Parent = root
 local function updateScale()
 	local v = Workspace.CurrentCamera and Workspace.CurrentCamera.ViewportSize or Vector2.new(1000, 600)
-	scale.Scale = math.clamp(math.min(v.X / 900, v.Y / 560), 0.6, 1.25)
+	local s = math.clamp(math.min(v.X / 900, v.Y / 560), 0.6, 1.25)
+	scale.Scale = s
+	-- o UIScale também escala o próprio Root: compensa para ele continuar ocupando a tela inteira
+	root.Size = UDim2.fromScale(1 / s, 1 / s)
 end
 updateScale()
 if Workspace.CurrentCamera then
@@ -1565,11 +1568,11 @@ local hud = Instance.new("Frame")
 hud.BackgroundColor3 = COLORS.bg
 hud.BackgroundTransparency = 0.15
 hud.Position = UDim2.fromOffset(12, 10)
-hud.Size = UDim2.fromOffset(230, 58)
+hud.Size = UDim2.fromOffset(300, 58)
 hud.Parent = root
 corner(hud, 10)
-local coinsLabel = label(hud, "Moedas: ...", 22, COLORS.gold, { Position = UDim2.fromOffset(12, 4), Size = UDim2.fromOffset(210, 28), Font = Enum.Font.GothamBold })
-local rateLabel = label(hud, "", 14, COLORS.muted, { Position = UDim2.fromOffset(12, 32), Size = UDim2.fromOffset(210, 20) })
+local coinsLabel = label(hud, "Moedas: ...", 22, COLORS.gold, { Position = UDim2.fromOffset(12, 4), Size = UDim2.fromOffset(276, 28), Font = Enum.Font.GothamBold })
+local rateLabel = label(hud, "", 14, COLORS.muted, { Position = UDim2.fromOffset(12, 32), Size = UDim2.fromOffset(276, 20) })
 
 -- Tutorial (topo centro)
 local tutorial = Instance.new("Frame")
