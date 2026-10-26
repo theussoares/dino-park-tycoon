@@ -1,0 +1,6 @@
+.DS_Store
+*.rbxl.lock
+*.rbxlx.lock
+*.rbxl
+*.rbxlx
+node_modules/
