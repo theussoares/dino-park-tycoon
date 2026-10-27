@@ -3684,7 +3684,9 @@ if Workspace.CurrentCamera then
 end
 
 local openBtn = button(root, "Hoje", C.button, UDim2.fromOffset(84, 40))
-openBtn.Position = UDim2.fromOffset(12, 78)
+-- Canto inferior esquerdo: o chat padrão do Roblox cobre o canto superior esquerdo e engole cliques.
+openBtn.AnchorPoint = Vector2.new(0, 1)
+openBtn.Position = UDim2.new(0, 12, 1, -12)
 openBtn.Visible = false
 local badge = label(openBtn, "", 12, C.bg, {
 	BackgroundTransparency = 0, BackgroundColor3 = C.gold, Size = UDim2.fromOffset(22, 22), Position = UDim2.new(1, -14, 0, -8),
@@ -3694,7 +3696,8 @@ corner(badge, 11)
 
 local panel = Instance.new("Frame")
 panel.BackgroundColor3 = C.panel
-panel.Position = UDim2.fromOffset(12, 124)
+panel.AnchorPoint = Vector2.new(0, 1)
+panel.Position = UDim2.new(0, 12, 1, -60)
 panel.Size = UDim2.fromOffset(450, 340)
 panel.Visible = false
 panel.Parent = root
