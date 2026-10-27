@@ -2,7 +2,7 @@
 const fs = require("fs"), path = require("path");
 const root = path.join(__dirname, "..");
 const r = (p) => fs.readFileSync(path.join(root, p), "utf8");
-const client = r("src/StarterPlayer/StarterPlayerScripts/DinoParkClient.client.lua");
+const client = r("src/StarterPlayer/StarterPlayerScripts/DinoParkClient.client.lua") + "\n" + r("src/StarterPlayer/StarterPlayerScripts/RetentionClient.client.lua");
 const game = r("src/ServerScriptService/DinoParkServices/GameService.lua");
 let bad = 0;
 const actions = new Set([...client.matchAll(/request\(\s*(?:[^"()]*\?\s*)?"(\w+)"/g)].map((m) => m[1]));
@@ -20,7 +20,7 @@ const cfg = r("src/ReplicatedStorage/Shared/Config.lua");
 for (const m of client.matchAll(/\bConfig\.(\w+)/g)) if (!new RegExp("Config\\." + m[1] + "\\s*=").test(cfg)) { console.log("Config sem campo: " + m[1]); bad++; }
 for (const f of ["Logic", "DinoModels"]) {
   const src = r(`src/ReplicatedStorage/Shared/${f}.lua`);
-  for (const file of ["src/ServerScriptService/DinoParkServices/GameService.lua", "src/ServerScriptService/DinoParkServices/ParkService.lua", "src/StarterPlayer/StarterPlayerScripts/DinoParkClient.client.lua"]) {
+  for (const file of ["src/ServerScriptService/DinoParkServices/GameService.lua", "src/ServerScriptService/DinoParkServices/ParkService.lua", "src/StarterPlayer/StarterPlayerScripts/DinoParkClient.client.lua", "src/StarterPlayer/StarterPlayerScripts/RetentionClient.client.lua"]) {
     for (const m of r(file).matchAll(new RegExp(`\\b${f}\\.(\\w+)`, "g"))) {
       if (!new RegExp(`function ${f === "Logic" ? "Logic" : "M"}\\.${m[1]}\\b`).test(src)) { console.log(`${file}: ${f}.${m[1]} não existe`); bad++; }
     }

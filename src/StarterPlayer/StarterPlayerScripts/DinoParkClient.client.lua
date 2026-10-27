@@ -568,17 +568,18 @@ function renderers.egg()
 		end)
 	end
 
+	local eggCost = state.eggCost or Config.EggCost -- servidor pode ajustar o preço (curva de custo)
 	local buy = item(76)
 	label(buy, "Comprar ovo", TEXT.card, C.text, { Position = UDim2.fromOffset(16, 12), Size = UDim2.new(1, -32, 0, 22), Font = FONT_STRONG })
-	label(buy, ("Custa %d moedas. Você tem %d."):format(Config.EggCost, state.eggs), TEXT.caption, C.muted, { Position = UDim2.fromOffset(16, 38), Size = UDim2.new(1, -176, 0, 18) })
-	if state.coins >= Config.EggCost then
+	label(buy, ("Custa %d moedas. Você tem %d ovo(s)."):format(eggCost, state.eggs), TEXT.caption, C.muted, { Position = UDim2.fromOffset(16, 38), Size = UDim2.new(1, -176, 0, 18) })
+	if state.coins >= eggCost then
 		local b = button(buy, "Comprar", "primary", UDim2.fromOffset(124, 40))
 		b.Position = UDim2.new(1, -140, 0, 18)
 		b.MouseButton1Click:Connect(function()
 			request("buyEgg")
 		end)
 	else
-		local missing = Config.EggCost - state.coins
+		local missing = eggCost - state.coins
 		local b = button(buy, "Faltam " .. missing, "disabled", UDim2.fromOffset(124, 40))
 		b.Position = UDim2.new(1, -140, 0, 18)
 		b.MouseButton1Click:Connect(function()

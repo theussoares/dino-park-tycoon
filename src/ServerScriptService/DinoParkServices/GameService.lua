@@ -10,6 +10,8 @@ local Logic = require(Shared:WaitForChild("Logic"))
 
 local DataService = require(script.Parent:WaitForChild("DataService"))
 local ParkService = require(script.Parent:WaitForChild("ParkService"))
+local Telemetry = require(script.Parent:WaitForChild("Telemetry"))
+local MonetizationService = require(script.Parent:WaitForChild("MonetizationService"))
 
 local GameService = {}
 
@@ -29,7 +31,7 @@ local function buildState(player, session)
 	local shop = {}
 	for _, id in ipairs(stock) do
 		local item = Logic.catalogItem(Config, id)
-		shop[#shop + 1] = { id = id, name = item.name, kind = item.kind, price = item.price, owned = data.owned[id] == true }
+		shop[#shop + 1] = { id = id, name = item.name, kind = item.kind, price = Logic.shopPrice(Config, item, now), basePrice = item.price, owned = data.owned[id] == true }
 	end
 	local upgrades = {}
 	for _, key in ipairs(Config.UpgradeOrder) do
@@ -55,7 +57,9 @@ local function buildState(player, session)
 		serverNow = now,
 		incubating = data.incubating and { readyAt = data.incubating.readyAt } or false,
 		incubateSeconds = Logic.incubateSeconds(data, Config),
-		perTick = Logic.incomePerTick(data, Config),
+		perTick = Logic.incomePerTick(data, Config, now),
+		eggCost = Logic.eggCost(data, Config, now),
+		retention = Logic.retentionView(data, Config, now),
 		missions = data.missions,
 		hatched = data.hatched,
 		tutorialDismissed = data.tutorialDismissed,
@@ -70,6 +74,58 @@ local function push(player)
 	if session then
 		stateRE:FireClient(player, buildState(player, session))
 	end
+end
+
+-- Telemetria de economia: envia ao AnalyticsService só a diferença do livro-razão desde o último envio.
+local function flushEconomy(player, session)
+	for _, e in ipairs(Logic.ecoDiff(session.ecoSnap, session.data)) do
+		Telemetry.economy(player, e.flow, e.reason, e.amount, session.data.coins)
+	end
+	session.ecoSnap = Logic.ecoSnapshot(session.data)
+end
+
+local function reachedSteps(session)
+	local set = {}
+	for _, f in ipairs(Logic.onboardingFlags(session.data)) do
+		set[f.name] = f.reached
+	end
+	return set
+end
+
+-- Eventos de ação (funil, compras, falta de moedas). Sem dados pessoais.
+local function logAction(player, session, action, payload, success, message, extra, before)
+	if not success then
+		if message == "Moedas insuficientes." then
+			Telemetry.event(player, "insufficient_coins", 1, { action = action })
+		end
+		return
+	end
+	local data = session.data
+	if action == "buyEgg" then
+		Telemetry.event(player, "egg_bought", data.stats.eggsBought, { cost = Logic.eggCost(data, Config) })
+	elseif action == "collect" then
+		Telemetry.event(player, "dino_hatched", data.hatched, { species = extra })
+	elseif action == "buyUpgrade" then
+		Telemetry.event(player, "upgrade_bought", data.stats.upgradesBought, { key = payload.key, level = data.upgrades[payload.key] })
+	elseif action == "buyShop" then
+		Telemetry.event(player, "shop_buy", data.stats.shopBuys, { item = payload.id })
+	elseif action == "claimDaily" then
+		Telemetry.event(player, "daily_claim", data.login.totalClaims, { day = extra })
+	elseif action == "claimQuest" then
+		Telemetry.event(player, "quest_claim", 1, { quest = payload.id })
+	elseif action == "claimQuestBonus" then
+		Telemetry.event(player, "quest_bonus_claim", 1)
+	elseif action == "claimGoal" then
+		Telemetry.event(player, "goal_claim", 1, { goal = payload.id })
+	end
+	-- funil de onboarding: registra só marcos alcançados NESTA ação
+	local after = reachedSteps(session)
+	for i, f in ipairs(Logic.onboardingFlags(data)) do
+		if after[f.name] and not before[f.name] then
+			Telemetry.funnel(player, "onboarding", session.funnelId, i, f.name)
+		end
+	end
+	flushEconomy(player, session)
 end
 
 -- Após qualquer mudança: missões, marcar para salvar, redesenhar parque (se necessário) e enviar estado.
@@ -91,7 +147,7 @@ function handlers.getState()
 end
 
 function handlers.buyEgg(player, session)
-	local ok, msg = Logic.buyEgg(session.data, Config)
+	local ok, msg = Logic.buyEgg(session.data, Config, os.time())
 	if ok then commit(player, session, false) end
 	return ok, msg
 end
@@ -103,11 +159,11 @@ function handlers.incubate(player, session)
 end
 
 function handlers.collect(player, session)
-	local ok, msg = Logic.collect(session.data, Config, os.time(), function()
+	local ok, msg, species = Logic.collect(session.data, Config, os.time(), function()
 		return rng:NextNumber()
 	end)
 	if ok then commit(player, session, false) end
-	return ok, msg
+	return ok, msg, species
 end
 
 function handlers.place(player, session, payload)
@@ -129,10 +185,44 @@ function handlers.buyUpgrade(player, session, payload)
 end
 
 function handlers.buyShop(player, session, payload)
-	local stock = Logic.shopStock(Config, os.time())
-	local ok, msg = Logic.buyShop(session.data, Config, payload and payload.id, stock)
+	local now = os.time()
+	local stock = Logic.shopStock(Config, now)
+	local ok, msg = Logic.buyShop(session.data, Config, payload and payload.id, stock, now)
 	if ok then commit(player, session, true) end
 	return ok, msg
+end
+
+function handlers.claimDaily(player, session)
+	local ok, msg, cycle = Logic.claimDaily(session.data, Config, os.time())
+	if ok then commit(player, session, true) end
+	return ok, msg, cycle
+end
+
+function handlers.claimQuest(player, session, payload)
+	local ok, msg = Logic.claimQuest(session.data, Config, payload and payload.id, os.time())
+	if ok then commit(player, session, false) end
+	return ok, msg
+end
+
+function handlers.claimQuestBonus(player, session)
+	local ok, msg = Logic.claimQuestBonus(session.data, Config, os.time())
+	if ok then commit(player, session, false) end
+	return ok, msg
+end
+
+function handlers.claimGoal(player, session, payload)
+	local ok, msg = Logic.claimGoal(session.data, Config, payload and payload.id)
+	if ok then commit(player, session, true) end
+	return ok, msg
+end
+
+-- O cliente só pode reportar eventos de uma lista fechada (Config.ClientEvents); o resto é ignorado.
+function handlers.track(player, session, payload)
+	local name = payload and payload.name
+	if type(name) == "string" and Config.ClientEvents[name] then
+		Telemetry.event(player, name, 1)
+	end
+	return true, ""
 end
 
 function handlers.dismissTutorial(player, session)
@@ -169,7 +259,8 @@ local function onRequest(player, action, payload)
 	if not handler or not session then
 		return { ok = false, message = session and "Ação desconhecida." or "Ainda carregando..." }
 	end
-	local ok, success, message = pcall(handler, player, session, payload)
+	local before = reachedSteps(session)
+	local ok, success, message, extra = pcall(handler, player, session, payload)
 	if not ok then
 		warn("[DinoPark] erro em '" .. action .. "': " .. tostring(success))
 		return { ok = false, message = "Erro interno." }
@@ -177,6 +268,7 @@ local function onRequest(player, action, payload)
 	if action == "getState" then
 		push(player)
 	end
+	logAction(player, session, action, payload or {}, success == true, message, extra, before)
 	return { ok = success == true, message = message or "" }
 end
 
@@ -197,19 +289,37 @@ local function onPlayerAdded(player)
 		return
 	end
 	local data = session.data
+	session.joinedAt = os.time()
+	session.funnelId = ("%d_%d"):format(player.UserId, session.joinedAt)
+	session.ecoSnap = Logic.ecoSnapshot(data)
 	-- Ganhos offline: calculado no servidor com limite configurável.
 	local earned, elapsed = Logic.offlineEarnings(data, Config, os.time())
 	if earned > 0 and not session.isNew then
-		data.coins = data.coins + earned
+		Logic.earn(data, earned, "offline")
 		DataService.markDirty(player)
 		session.welcome = ("Bem-vindo de volta! Seus visitantes renderam %d moedas em %d min."):format(earned, math.floor(elapsed / 60))
 	end
 	data.lastSeen = os.time()
+	local info = Logic.startSession(data, Config, os.time())
+	DataService.markDirty(player)
+	Telemetry.event(player, "session_start", info.daysSinceFirst, { sessions = info.sessions })
+	if info.isNewDay and info.daysSinceFirst > 0 then
+		Telemetry.event(player, "return_day", info.daysSinceFirst)
+	end
+	if session.isNew then
+		Telemetry.funnel(player, "onboarding", session.funnelId, 0, "first_join")
+	end
+	flushEconomy(player, session)
 	ParkService.refresh(player, data)
 	push(player)
 end
 
 local function onPlayerRemoving(player)
+	local session = DataService.get(player)
+	if session and session.ecoSnap then
+		flushEconomy(player, session)
+		Telemetry.event(player, "session_end", os.time() - (session.joinedAt or os.time()))
+	end
 	ParkService.release(player)
 	DataService.release(player)
 	lastRequest[player] = nil
@@ -229,6 +339,7 @@ function GameService.start()
 	notifyRE.Name = "Notify"
 	notifyRE.Parent = remotes
 	requestRF.OnServerInvoke = onRequest
+	MonetizationService.init({ DataService = DataService, Telemetry = Telemetry, push = push }) -- no-op com a flag desligada
 
 	Players.PlayerAdded:Connect(function(player)
 		task.spawn(onPlayerAdded, player)
@@ -264,9 +375,9 @@ function GameService.start()
 		while true do
 			task.wait(Config.IncomeInterval)
 			for player, session in pairs(DataService.sessions()) do
-				local tick = Logic.incomePerTick(session.data, Config)
+				local tick = Logic.incomePerTick(session.data, Config, os.time())
 				if tick > 0 then
-					session.data.coins = session.data.coins + tick
+					Logic.earn(session.data, tick, "income")
 					DataService.markDirty(player)
 					push(player)
 				end
@@ -286,7 +397,10 @@ function GameService.start()
 			sinceSave = sinceSave + 1
 			if sinceSave >= Config.AutosaveSeconds then
 				sinceSave = 0
-				for player in pairs(DataService.sessions()) do
+				for player, session in pairs(DataService.sessions()) do
+					if session.ecoSnap then
+						flushEconomy(player, session)
+					end
 					-- touch=true: grava mesmo sem mudanças para renovar a trava de sessão
 					task.spawn(DataService.save, player, false, true, false)
 				end

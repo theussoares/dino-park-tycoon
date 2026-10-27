@@ -116,3 +116,8 @@ Studio (Place1): o `DinoParkClient` e o `Config` do place foram atualizados e co
 Nota de método: o `user_mouse_input` usa as mesmas coordenadas do `AbsolutePosition` (centro do botão), **sem** somar os 58 px da barra superior. Com o deslocamento somado, o clique erra o botão, e isso provavelmente explica o "clique não abriu" da sessão de UI.
 
 Ainda NÃO verificado: Guardar, revelação com "Guardar para depois", habitat cheio, layout em celular/retrato, som da revelação, DataStore real, multiplayer. UX: com as missões concluídas, "Próximo passo" e "Próxima melhoria" mostram a mesma informação.
+## Retenção e economia (branch `claude/retention-monetization-e71094`)
+
+Executado em 2026-10-26 (Node, `luaparse`, `fengari`): `node tools/build.js && (cd tools && node check.js && node globals.js && node xref.js) && node tests/run_tests.js` → check 15/15, xref ok, **36 testes de lógica passam** (migração v1→v2, livro-razão, preço do ovo, eventos semanais e fuso, impulso, calendário diário sem punição, missões/metas anti-duplicação, recibos idempotentes, ofertas, guia da loja, funil, simulações de economia de 4 h e 24 h).
+
+**Não verificado:** Roblox Studio estava em Play de outra sessão e não foi interrompido, então o painel Hoje, `Telemetry`/AnalyticsService (nomes de API de memória), remotes novos, DataStore v2 em runtime e `MonetizationService` (desligado) **nunca rodaram**. As simulações de economia são consequência dos números de `Config`, não playtest. Sem multiplayer, mobile ou dados reais.
