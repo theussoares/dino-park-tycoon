@@ -98,6 +98,7 @@ local function buildPlot(index, def)
 	-- incubadora
 	mk(folder, "IncubatorBase", Vector3.new(5, 1.2, 5), at(0, 0.9, -10), Color3.fromRGB(190, 160, 120), Enum.Material.Wood)
 	local egg = mk(folder, "Egg", Vector3.new(3.4, 3.4, 3.4), at(0, 3.2, -10), Color3.fromRGB(250, 240, 215), Enum.Material.SmoothPlastic, Enum.PartType.Ball)
+	egg.CanCollide = false -- decorativo: não deixa o jogador ficar em cima dele
 	plot.eggPart = egg
 	for i = 1, 3 do
 		mk(folder, "EggSpot" .. i, Vector3.new(0.7, 0.7, 0.7), at(-1 + i * 0.9, 3 + (i % 2) * 0.9, -11.5), Color3.fromRGB(120, 200, 110), Enum.Material.SmoothPlastic, Enum.PartType.Ball)

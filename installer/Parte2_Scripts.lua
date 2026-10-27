@@ -44,6 +44,9 @@ local Config = {}
 
 Config.SchemaVersion = 1
 Config.DataStoreName = "DinoParkTycoon_v1"
+-- Limites do mapa (servidor devolve ao spawn quem passar deles ou cair abaixo de VoidY)
+Config.MapHalf = 132 -- muros em ±130; encostado no muro o jogador fica em ≈±129
+Config.VoidY = -6
 Config.MaxPlayers = 4 -- = número de parques (Config.Plots)
 
 -- Economia
@@ -1012,6 +1015,7 @@ local function buildPlot(index, def)
 	-- incubadora
 	mk(folder, "IncubatorBase", Vector3.new(5, 1.2, 5), at(0, 0.9, -10), Color3.fromRGB(190, 160, 120), Enum.Material.Wood)
 	local egg = mk(folder, "Egg", Vector3.new(3.4, 3.4, 3.4), at(0, 3.2, -10), Color3.fromRGB(250, 240, 215), Enum.Material.SmoothPlastic, Enum.PartType.Ball)
+	egg.CanCollide = false -- decorativo: não deixa o jogador ficar em cima dele
 	plot.eggPart = egg
 	for i = 1, 3 do
 		mk(folder, "EggSpot" .. i, Vector3.new(0.7, 0.7, 0.7), at(-1 + i * 0.9, 3 + (i % 2) * 0.9, -11.5), Color3.fromRGB(120, 200, 110), Enum.Material.SmoothPlastic, Enum.PartType.Ball)
@@ -1150,6 +1154,7 @@ return ParkService
 --!nonstrict
 -- Autoridade do jogo: remotes validados, ações, renda periódica, ganhos offline e estado enviado ao cliente.
 local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -1385,6 +1390,27 @@ function GameService.start()
 	for _, player in ipairs(Players:GetPlayers()) do
 		task.spawn(onPlayerAdded, player)
 	end
+
+	-- Rede de segurança: quem sair dos limites ou cair no vazio volta ao spawn
+	task.spawn(function()
+		local spawnPart = Workspace:FindFirstChild("ParkSpawn", true)
+		while true do
+			task.wait(0.5)
+			spawnPart = (spawnPart and spawnPart.Parent) and spawnPart or Workspace:FindFirstChild("ParkSpawn", true)
+			for _, player in ipairs(Players:GetPlayers()) do
+				local character = player.Character
+				local hrp = character and character:FindFirstChild("HumanoidRootPart")
+				if hrp then
+					local p = hrp.Position
+					if math.abs(p.X) > Config.MapHalf or math.abs(p.Z) > Config.MapHalf or p.Y < Config.VoidY then
+						local target = spawnPart and (spawnPart.CFrame + Vector3.new(0, 4, 0)) or CFrame.new(0, 10, 85)
+						hrp.AssemblyLinearVelocity = Vector3.zero
+						character:PivotTo(target)
+					end
+				end
+			end
+		end
+	end)
 
 	-- Renda dos visitantes
 	task.spawn(function()
@@ -1720,14 +1746,6 @@ local renderers = {}
 function renderers.egg()
 	panelTitle.Text = "Ovos e incubadora"
 	textRow(("Você tem %d ovo(s). Cada ovo custa %d moedas."):format(state.eggs, Config.EggCost), COLORS.text, 36)
-	local f = row(150)
-	label(f, "Chances ao chocar (o primeiro ovo é sempre um Leafling):", 14, COLORS.muted, { Position = UDim2.fromOffset(12, 6), Size = UDim2.new(1, -24, 0, 36) })
-	local y = 44
-	for _, o in ipairs(Logic.odds(Config)) do
-		local sp = Config.Species[o.id]
-		label(f, ("%s (%s): %.0f%%"):format(sp.name, sp.rarity, o.percent), 15, Config.RarityColors[sp.rarity], { Position = UDim2.fromOffset(12, y), Size = UDim2.new(1, -24, 0, 22) })
-		y = y + 24
-	end
 	local inc = row(96)
 	if state.incubating then
 		local l = label(inc, "", 16, COLORS.text, { Position = UDim2.fromOffset(12, 6), Size = UDim2.new(1, -150, 0, 40), TextYAlignment = Enum.TextYAlignment.Center })
@@ -1751,6 +1769,14 @@ function renderers.egg()
 	local b = button(buy, "Comprar", state.coins >= Config.EggCost and COLORS.button or COLORS.buttonOff, UDim2.fromOffset(110, 38))
 	b.Position = UDim2.new(1, -124, 0.5, -19)
 	b.MouseButton1Click:Connect(function() request("buyEgg") end)
+	local f = row(150)
+	label(f, "Chances ao chocar (o primeiro ovo é sempre um Leafling):", 14, COLORS.muted, { Position = UDim2.fromOffset(12, 6), Size = UDim2.new(1, -24, 0, 36) })
+	local y = 44
+	for _, o in ipairs(Logic.odds(Config)) do
+		local sp = Config.Species[o.id]
+		label(f, ("%s (%s): %.0f%%"):format(sp.name, sp.rarity, o.percent), 15, Config.RarityColors[sp.rarity], { Position = UDim2.fromOffset(12, y), Size = UDim2.new(1, -24, 0, 22) })
+		y = y + 24
+	end
 end
 
 function renderers.inventory()
@@ -1828,6 +1854,35 @@ local function render()
 	clearList()
 	renderers[openPanel]()
 end
+
+-- Cada push de estado reconstrói o painel; se isso acontecer entre o apertar e o soltar do clique,
+-- o botão é destruído e o clique se perde. Adia a reconstrução enquanto o ponteiro estiver pressionado.
+local UserInputService = game:GetService("UserInputService")
+local pointerDown, renderPending = false, false
+local function isPointer(input)
+	return input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch
+end
+local function renderSafe()
+	if pointerDown then
+		renderPending = true
+		return
+	end
+	render()
+end
+UserInputService.InputBegan:Connect(function(input)
+	if isPointer(input) then
+		pointerDown = true
+	end
+end)
+UserInputService.InputEnded:Connect(function(input)
+	if isPointer(input) then
+		pointerDown = false
+		if renderPending then
+			renderPending = false
+			task.delay(0.1, render) -- depois do Click do botão ser processado
+		end
+	end
+end)
 
 local function setPanel(name)
 	if openPanel == name then
@@ -1914,7 +1969,7 @@ stateRE.OnClientEvent:Connect(function(s)
 	if msg then
 		tutorialText.Text = msg
 	end
-	render()
+	renderSafe()
 end)
 
 notifyRE.OnClientEvent:Connect(function(n)

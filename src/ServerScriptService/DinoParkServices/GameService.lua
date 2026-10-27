@@ -1,6 +1,7 @@
 --!nonstrict
 -- Autoridade do jogo: remotes validados, ações, renda periódica, ganhos offline e estado enviado ao cliente.
 local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -236,6 +237,27 @@ function GameService.start()
 	for _, player in ipairs(Players:GetPlayers()) do
 		task.spawn(onPlayerAdded, player)
 	end
+
+	-- Rede de segurança: quem sair dos limites ou cair no vazio volta ao spawn
+	task.spawn(function()
+		local spawnPart = Workspace:FindFirstChild("ParkSpawn", true)
+		while true do
+			task.wait(0.5)
+			spawnPart = (spawnPart and spawnPart.Parent) and spawnPart or Workspace:FindFirstChild("ParkSpawn", true)
+			for _, player in ipairs(Players:GetPlayers()) do
+				local character = player.Character
+				local hrp = character and character:FindFirstChild("HumanoidRootPart")
+				if hrp then
+					local p = hrp.Position
+					if math.abs(p.X) > Config.MapHalf or math.abs(p.Z) > Config.MapHalf or p.Y < Config.VoidY then
+						local target = spawnPart and (spawnPart.CFrame + Vector3.new(0, 4, 0)) or CFrame.new(0, 10, 85)
+						hrp.AssemblyLinearVelocity = Vector3.zero
+						character:PivotTo(target)
+					end
+				end
+			end
+		end
+	end)
 
 	-- Renda dos visitantes
 	task.spawn(function()

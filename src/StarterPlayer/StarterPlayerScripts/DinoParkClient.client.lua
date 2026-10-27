@@ -259,14 +259,6 @@ local renderers = {}
 function renderers.egg()
 	panelTitle.Text = "Ovos e incubadora"
 	textRow(("Você tem %d ovo(s). Cada ovo custa %d moedas."):format(state.eggs, Config.EggCost), COLORS.text, 36)
-	local f = row(150)
-	label(f, "Chances ao chocar (o primeiro ovo é sempre um Leafling):", 14, COLORS.muted, { Position = UDim2.fromOffset(12, 6), Size = UDim2.new(1, -24, 0, 36) })
-	local y = 44
-	for _, o in ipairs(Logic.odds(Config)) do
-		local sp = Config.Species[o.id]
-		label(f, ("%s (%s): %.0f%%"):format(sp.name, sp.rarity, o.percent), 15, Config.RarityColors[sp.rarity], { Position = UDim2.fromOffset(12, y), Size = UDim2.new(1, -24, 0, 22) })
-		y = y + 24
-	end
 	local inc = row(96)
 	if state.incubating then
 		local l = label(inc, "", 16, COLORS.text, { Position = UDim2.fromOffset(12, 6), Size = UDim2.new(1, -150, 0, 40), TextYAlignment = Enum.TextYAlignment.Center })
@@ -290,6 +282,14 @@ function renderers.egg()
 	local b = button(buy, "Comprar", state.coins >= Config.EggCost and COLORS.button or COLORS.buttonOff, UDim2.fromOffset(110, 38))
 	b.Position = UDim2.new(1, -124, 0.5, -19)
 	b.MouseButton1Click:Connect(function() request("buyEgg") end)
+	local f = row(150)
+	label(f, "Chances ao chocar (o primeiro ovo é sempre um Leafling):", 14, COLORS.muted, { Position = UDim2.fromOffset(12, 6), Size = UDim2.new(1, -24, 0, 36) })
+	local y = 44
+	for _, o in ipairs(Logic.odds(Config)) do
+		local sp = Config.Species[o.id]
+		label(f, ("%s (%s): %.0f%%"):format(sp.name, sp.rarity, o.percent), 15, Config.RarityColors[sp.rarity], { Position = UDim2.fromOffset(12, y), Size = UDim2.new(1, -24, 0, 22) })
+		y = y + 24
+	end
 end
 
 function renderers.inventory()
@@ -367,6 +367,35 @@ local function render()
 	clearList()
 	renderers[openPanel]()
 end
+
+-- Cada push de estado reconstrói o painel; se isso acontecer entre o apertar e o soltar do clique,
+-- o botão é destruído e o clique se perde. Adia a reconstrução enquanto o ponteiro estiver pressionado.
+local UserInputService = game:GetService("UserInputService")
+local pointerDown, renderPending = false, false
+local function isPointer(input)
+	return input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch
+end
+local function renderSafe()
+	if pointerDown then
+		renderPending = true
+		return
+	end
+	render()
+end
+UserInputService.InputBegan:Connect(function(input)
+	if isPointer(input) then
+		pointerDown = true
+	end
+end)
+UserInputService.InputEnded:Connect(function(input)
+	if isPointer(input) then
+		pointerDown = false
+		if renderPending then
+			renderPending = false
+			task.delay(0.1, render) -- depois do Click do botão ser processado
+		end
+	end
+end)
 
 local function setPanel(name)
 	if openPanel == name then
@@ -453,7 +482,7 @@ stateRE.OnClientEvent:Connect(function(s)
 	if msg then
 		tutorialText.Text = msg
 	end
-	render()
+	renderSafe()
 end)
 
 notifyRE.OnClientEvent:Connect(function(n)

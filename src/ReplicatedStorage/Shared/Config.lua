@@ -5,6 +5,9 @@ local Config = {}
 
 Config.SchemaVersion = 1
 Config.DataStoreName = "DinoParkTycoon_v1"
+-- Limites do mapa (servidor devolve ao spawn quem passar deles ou cair abaixo de VoidY)
+Config.MapHalf = 132 -- muros em ±130; encostado no muro o jogador fica em ≈±129
+Config.VoidY = -6
 Config.MaxPlayers = 4 -- = número de parques (Config.Plots)
 
 -- Economia

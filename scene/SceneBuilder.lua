@@ -3,10 +3,36 @@
 -- Cole na Command Bar do Roblox Studio. Cria tudo em Workspace.DinoParkWorld.
 -- Seguro para repetir: se a pasta já existir, PARA sem alterar nada (mude REPLACE_EXISTING para recriar;
 -- isso só apaga Workspace.DinoParkWorld, gerada por este script).
+-- Sempre esvazia o Terrain na área do mapa: templates como "Flat Terrain" têm grama sólida até y≈10,
+-- acima do chão do jogo (y=0), e o jogador nasceria dentro dela.
 local REPLACE_EXISTING = false
 
 local Workspace = game:GetService("Workspace")
 local Lighting = game:GetService("Lighting")
+
+do
+	local MAP_HALF = 170 -- mapa tem 260x260; margem para não sobrar parede de terreno colada no muro
+	local region = Region3.new(Vector3.new(-MAP_HALF, -8, -MAP_HALF), Vector3.new(MAP_HALF, 64, MAP_HALF)):ExpandToGrid(4)
+	local materials = Workspace.Terrain:ReadVoxels(region, 4)
+	local size = materials.Size
+	local found = false
+	for x = 1, size.X do
+		for y = 1, size.Y do
+			for z = 1, size.Z do
+				if materials[x][y][z] ~= Enum.Material.Air then
+					found = true
+					break
+				end
+			end
+			if found then break end
+		end
+		if found then break end
+	end
+	if found then
+		Workspace.Terrain:FillRegion(region, 4, Enum.Material.Air)
+		warn("[DinoPark] Terrain removido na área do mapa (x/z ±" .. MAP_HALF .. ", y -8..64); fora dela nada mudou.")
+	end
+end
 
 local existing = Workspace:FindFirstChild("DinoParkWorld")
 if existing then
@@ -57,10 +83,16 @@ local ground = folder("Ground")
 part({ Name = "Grass", Size = Vector3.new(260, 1, 260), Position = Vector3.new(0, -0.5, 0), Color = C.grass, Material = Enum.Material.Grass }, ground)
 part({ Name = "PatchA", Size = Vector3.new(40, 0.2, 40), Position = Vector3.new(-20, 0.05, 0), Color = C.grassDark, Material = Enum.Material.Grass, CanCollide = false }, ground)
 part({ Name = "PatchB", Size = Vector3.new(34, 0.2, 34), Position = Vector3.new(24, 0.05, 6), Color = C.grassDark, Material = Enum.Material.Grass, CanCollide = false }, ground)
--- muro baixo de borda (delimita o mapa)
+-- chão extra além da borda (fica abaixo do chão principal; só aparece fora dele)
+part({ Name = "Outer", Size = Vector3.new(420, 1, 420), Position = Vector3.new(0, -0.55, 0), Color = C.grassDark, Material = Enum.Material.Grass }, ground)
+-- Limite do mapa: faixa visual baixa (translúcida) + parede invisível alta e grossa por fora.
+-- Muro de 1 stud e 8 de altura deixava o pulo atravessar/passar por cima e cair no vazio.
 local bounds = folder("Bounds")
 for _, d in ipairs({ { 0, 130, 262, 1 }, { 0, -130, 262, 1 }, { 130, 0, 1, 262 }, { -130, 0, 1, 262 } }) do
 	part({ Name = "Wall", Size = Vector3.new(d[3], 8, d[4]), Position = Vector3.new(d[1], 4, d[2]), Color = C.stone, Material = Enum.Material.Slate, Transparency = 0.5 }, bounds)
+end
+for _, d in ipairs({ { 0, 133, 274, 6 }, { 0, -133, 274, 6 }, { 133, 0, 6, 274 }, { -133, 0, 6, 274 } }) do
+	part({ Name = "WallInvisible", Size = Vector3.new(d[3], 80, d[4]), Position = Vector3.new(d[1], 40, d[2]), Transparency = 1 }, bounds)
 end
 
 -- Avenidas: principal (eixo Z) e travessas até cada parque (eixo X)

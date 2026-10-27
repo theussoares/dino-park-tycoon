@@ -6,7 +6,7 @@ Jogo Roblox de parque de dinossauros: choque ovos, coloque dinos no habitat, gan
 
 ## Jogar (5 passos)
 
-1. Roblox Studio > **New > Baseplate**. Apague `Baseplate` e `SpawnLocation` do Explorer. Salve o lugar (**File > Save to Roblox** para poder testar o DataStore).
+1. Roblox Studio > **New > Baseplate**. Apague `Baseplate` e `SpawnLocation` do Explorer. (Se usar outro template com Terrain, a Parte 1 esvazia o Terrain na área do mapa.) Salve o lugar (**File > Save to Roblox** para poder testar o DataStore).
 2. **View > Command Bar**. Cole **todo** o `installer/Parte1_Cenario.lua` e Enter (cria o mapa).
 3. Cole **todo** o `installer/Parte2_Scripts.lua` e Enter (cria scripts e interface).
 4. **Home > Game Settings > Players > Max Players = 4** (há 4 parques).

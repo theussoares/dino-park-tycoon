@@ -63,3 +63,21 @@ Bugs encontrados e corrigidos (em `src/StarterPlayer/StarterPlayerScripts/DinoPa
 Ainda não verificado:
 - Uma "camada" verde com textura de folhas no alto das capturas de tela. Um raycast para cima a partir da câmera não acertou nenhuma peça; pode ser artefato da captura ou do material Grass. Precisa ser olhado no viewport.
 - Cliques reais nos botões, painéis abertos (só a barra/HUD/tutorial foram vistos), modelos dos dinos/decorações vistos de perto, escala < 1 (telas pequenas/mobile), DataStore real, multiplayer, BindToClose.
+
+### Bug 3 (relatado pelo usuário): jogador preso em cima da grama
+- Sintoma: grama na altura da cabeça; após 2 pulos o jogador ficava em cima dela e não voltava ao mapa. (As capturas anteriores mostravam essa "camada verde" e eu a tratei por engano como artefato.)
+- Causa: o lugar foi criado com template de Terrain ("Flat Terrain"): grama de Terrain sólida até y≈8–10 no mapa inteiro, enquanto o cenário fica em y=0. O raycast anterior partiu de dentro/acima do terreno e por isso não o detectou.
+- Correção: `scene/SceneBuilder.lua` (→ Parte 1) sempre esvazia o Terrain na área do mapa (x/z ±170, y -8..64) antes de montar, mesmo se `DinoParkWorld` já existir. README atualizado.
+- Verificado no Studio: raycast de cima acerta `ParkSpawn` (y=1) e `Ground.Grass` (y=0); no Play o personagem fica em y=4 (quadril), pula até y≈11 e volta a y=4, anda até a avenida (Sand); a captura mostra céu e nenhuma camada verde; o console não mostra erros.
+
+## Correções do playtest Haiku (docs/playtest/2026-10-26-haiku.md)
+
+**Alterado:** `scene/SceneBuilder.lua` (chão `Ground.Outer` 420x420 abaixo do gramado; paredes `WallInvisible` 80 de altura e 6 de espessura por fora de `Bounds/Wall`, que continua só como faixa visual — bugs 1 e 4), `Config.lua` (`MapHalf`, `VoidY`), `GameService.lua` (rede de segurança a cada 0,5 s: fora de ±132 ou y < −6 ⇒ volta ao `ParkSpawn`; era ±128 na sessão de correção, subido para 132 na revisão porque encostar no muro deixa o jogador em ≈±129 — o limite de 132 não foi reverificado no Studio), `ParkService.lua` (`Egg.CanCollide=false` — bug 2), `DinoParkClient.client.lua` (bug 3: reconstrução do painel adiada enquanto o ponteiro está pressionado; bug 5: "Comprar ovo" antes da tabela de chances).
+
+**Verificado no Studio (Place1, Play iniciado e parado por esta sessão):**
+- Bug 1: repetido o passo a passo (navegar a (0,3,126), segurar S, pular 3x): personagem ficou em z≈127, y≈3. Sem sair do mapa. Só a parede sul foi testada por pulo.
+- Rede de segurança: teleporte via servidor para (150,3,150) e depois (0,−20,0): ambos voltaram ao spawn (0,4,85).
+- Bug 2: `Egg.CanCollide == false` lido em Play. Não testei caminhando.
+- Console sem erros além do aviso esperado de DataStore.
+
+**NÃO verificado no Studio:** as mudanças do cliente (bugs 3 e 5) — só passaram nos checadores de sintaxe/xref; a causa do bug 3 é hipótese (painel recriado por push de estado entre apertar e soltar), não foi reproduzida. Paredes leste/oeste/norte não foram testadas por pulo (mesma construção). `installer/*` regerados por `tools/build.js`; os scripts no place foram atualizados à mão via MCP apenas para servidor/Config/cenário.
