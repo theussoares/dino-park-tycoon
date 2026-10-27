@@ -5,3 +5,5 @@
 - [ ] importar Quaternius (FBX manual) — opcional
 - [ ] balanceamento com dados de playtest
 - [ ] mobile playtest
+- [~] retenção/economia/monetização opcional (branch retention-monetization): lógica + testes + painel Hoje implementados; **não testado no Studio**; Robux desligado — ver RETENTION_MONETIZATION_PLAN.md
+- [ ] liberar dinossauro (inventário de 60 trava o loop de ovos)

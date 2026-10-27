@@ -12,7 +12,7 @@ local SPS = StarterPlayer:FindFirstChild("StarterPlayerScripts") or StarterPlaye
 assert(SPS, "[DinoPark] StarterPlayerScripts não encontrado")
 
 local targets = {
-	{ RS, "Shared" }, { SSS, "DinoParkServices" }, { SSS, "DinoParkMain" }, { SPS, "DinoParkClient" },
+	{ RS, "Shared" }, { SSS, "DinoParkServices" }, { SSS, "DinoParkMain" }, { SPS, "DinoParkClient" }, { SPS, "RetentionClient" },
 }
 for _, t in ipairs(targets) do
 	local found = t[1]:FindFirstChild(t[2])
@@ -42,7 +42,7 @@ local sharedFiles = {
 -- a testar com jogadores reais, não verdades de mercado.
 local Config = {}
 
-Config.SchemaVersion = 1
+Config.SchemaVersion = 2
 Config.DataStoreName = "DinoParkTycoon_v1"
 Config.MaxPlayers = 4 -- = número de parques (Config.Plots)
 
@@ -101,8 +101,10 @@ Config.Upgrades = {
 	slots = { name = "Novo habitat", desc = "Libera mais um espaço para dinossauros.", maxLevel = 3, costs = { 150, 400, 900 } },
 	income = { name = "Mais visitantes", desc = "+25% de renda por nível.", maxLevel = 5, costs = { 100, 250, 500, 1000, 2000 }, bonus = 0.25 },
 	incubator = { name = "Incubadora rápida", desc = "-25% do tempo de incubação por nível.", maxLevel = 3, costs = { 120, 300, 700 }, reduction = 0.25 },
+	-- Sumidouro de longo prazo (meta de dias): renda +10% por nível, custo ~2,5x por nível.
+	renovation = { name = "Reforma do parque", desc = "+10% de renda por nível. Meta de longo prazo.", maxLevel = 6, costs = { 4000, 12000, 40000, 120000, 350000, 900000 }, bonus = 0.10 },
 }
-Config.UpgradeOrder = { "slots", "income", "incubator" }
+Config.UpgradeOrder = { "slots", "income", "incubator", "renovation" }
 
 -- Catálogo cosmético (nenhum item dá vantagem de jogo). spot = posição de decoração no parque.
 Config.ShopCatalog = {
@@ -115,6 +117,13 @@ Config.ShopCatalog = {
 	{ id = "fence_candy", kind = "fence", name = "Cerca doce", price = 90, color = Color3.fromRGB(245, 150, 190) },
 	{ id = "fence_sky", kind = "fence", name = "Cerca céu", price = 90, color = Color3.fromRGB(120, 190, 245) },
 	{ id = "fence_mint", kind = "fence", name = "Cerca menta", price = 90, color = Color3.fromRGB(130, 220, 170) },
+	-- Sumidouros de fim de jogo (cosméticos caros, comprados só com Coins)
+	{ id = "fence_lava", kind = "fence", name = "Cerca lava", price = 800, color = Color3.fromRGB(235, 90, 50) },
+	{ id = "fence_ice", kind = "fence", name = "Cerca gelo", price = 800, color = Color3.fromRGB(190, 235, 255) },
+	{ id = "fence_night", kind = "fence", name = "Cerca noturna", price = 1500, color = Color3.fromRGB(70, 60, 130) },
+	-- Só por recompensa (nunca aparecem na loja, nunca à venda)
+	{ id = "fence_gold", kind = "fence", name = "Cerca dourada", price = 0, rewardOnly = true, color = Color3.fromRGB(240, 195, 60) },
+	{ id = "fence_royal", kind = "fence", name = "Cerca real", price = 0, rewardOnly = true, color = Color3.fromRGB(150, 90, 200) },
 }
 Config.DefaultFenceColor = Color3.fromRGB(139, 94, 60)
 
@@ -123,6 +132,100 @@ Config.Missions = {
 	{ id = "place", text = "Coloque um dinossauro no habitat", reward = 75 },
 	{ id = "upgrade", text = "Compre uma melhoria", reward = 100 },
 }
+
+-- ===== Retenção, economia e eventos (todos os números são HIPÓTESES; ver RETENTION_MONETIZATION_PLAN.md) =====
+Config.DayOffsetSeconds = -3 * 3600 -- "dia" do jogo vira às 00:00 de Brasília (UTC-3), igual para todos os servidores
+Config.DaySeconds = 86400
+
+-- Controle de inflação: ovo fica mais caro a cada EggCostStepEvery ovos chocados (teto +EggCostMaxGrowth).
+Config.EggCostStepEvery = 10
+Config.EggCostStep = 0.10
+Config.EggCostMaxGrowth = 1.0
+Config.MaxEggs = 99
+
+-- Calendário diário de 7 recompensas. Reclamar avança o ciclo; faltar um dia NÃO zera nada (sem punição).
+-- coinsMinutes = minutos de renda atual (limitados por [coinsMin, coinsMax]); a renda vira "tamanho relativo".
+Config.DailyRewards = {
+	{ coinsMinutes = 3, coinsMin = 40, coinsMax = 600 },
+	{ eggs = 1 },
+	{ coinsMinutes = 6, coinsMin = 80, coinsMax = 1200 },
+	{ boost = true },
+	{ coinsMinutes = 10, coinsMin = 120, coinsMax = 2000 },
+	{ eggs = 2 },
+	{ coinsMinutes = 15, coinsMin = 200, coinsMax = 3000, eggs = 1, cosmetic = "fence_gold" },
+}
+Config.DailyCosmeticFallbackCoins = 300 -- se o cosmético da recompensa já é seu
+Config.DailyBoost = { mult = 1.5, seconds = 600 }
+Config.MaxBoostSeconds = 1800 -- teto de tempo de impulso acumulado (inclui produtos futuros)
+
+-- Missões diárias: 3 por dia, sorteadas de forma determinística pelo dia (iguais para todos).
+Config.DailyQuestCount = 3
+Config.DailyQuestPool = {
+	{ id = "q_hatch2", text = "Choque 2 ovos", stat = "hatched", target = 2, reward = 60 },
+	{ id = "q_egg1", text = "Compre 1 ovo", stat = "eggsBought", target = 1, reward = 40 },
+	{ id = "q_place1", text = "Coloque 1 dinossauro num habitat", stat = "placements", target = 1, reward = 40 },
+	{ id = "q_shop1", text = "Compre 1 item da loja", stat = "shopBuys", target = 1, reward = 50 },
+	{ id = "q_up1", text = "Compre 1 melhoria", stat = "upgradesBought", target = 1, reward = 80 },
+	{ id = "q_earn400", text = "Ganhe 400 moedas", stat = "coinsEarned", target = 400, reward = 60 },
+}
+Config.DailyAllBonus = { eggs = 1, text = "Todas as missões do dia: +1 ovo" }
+
+-- Metas de curto / médio / longo prazo (recompensa única; nada expira).
+Config.Goals = {
+	{ id = "g_hatch3", tier = "short", text = "Choque 3 ovos", stat = "hatched", target = 3, reward = { coins = 60 } },
+	{ id = "g_slots2", tier = "short", text = "Tenha 2 habitats", stat = "slots", target = 2, reward = { coins = 100 } },
+	{ id = "g_decor1", tier = "short", text = "Compre sua 1ª decoração ou cerca", stat = "cosmetics", target = 1, reward = { coins = 50 } },
+	{ id = "g_dex3", tier = "mid", text = "Descubra as 3 espécies", stat = "discovered", target = 3, reward = { eggs = 1, coins = 150 } },
+	{ id = "g_hatch15", tier = "mid", text = "Choque 15 ovos", stat = "hatched", target = 15, reward = { coins = 300 } },
+	{ id = "g_income3", tier = "mid", text = "Mais visitantes nível 3", stat = "incomeLevel", target = 3, reward = { coins = 250 } },
+	{ id = "g_slots4", tier = "mid", text = "Tenha os 4 habitats", stat = "slots", target = 4, reward = { coins = 400 } },
+	{ id = "g_hatch50", tier = "long", text = "Choque 50 ovos", stat = "hatched", target = 50, reward = { coins = 1500, eggs = 2 } },
+	{ id = "g_earn50k", tier = "long", text = "Ganhe 50.000 moedas no total", stat = "coinsEarned", target = 50000, reward = { cosmetic = "fence_royal", coins = 1000 } },
+	{ id = "g_upall", tier = "long", text = "Todas as melhorias no máximo", stat = "upgradesTotal", target = 17, reward = { coins = 2500 } },
+}
+Config.GoalTierNames = { short = "Curto prazo", mid = "Médio prazo", long = "Longo prazo" }
+
+-- Calendário semanal PREVISÍVEL (weekday: 0=segunda ... 6=domingo, no fuso de Config.DayOffsetSeconds).
+-- Efeitos pequenos e temporários; nada é exclusivo nem punitivo.
+Config.Events = {
+	{ id = "decor_wed", name = "Quarta da Decoração", desc = "Itens da loja 20% mais baratos.", days = { 2 }, shopDiscount = 0.20 },
+	{ id = "visitors_fri", name = "Sextou dos Visitantes", desc = "+15% de renda dos visitantes.", days = { 4 }, income = 0.15 },
+	{ id = "eggs_weekend", name = "Fim de semana dos Ovos", desc = "Ovos 25% mais baratos.", days = { 5, 6 }, eggDiscount = 0.25 },
+}
+Config.WeekdayNames = { [0] = "segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo" }
+
+-- Ofertas (futuras, com Robux): regras para NUNCA aparecer cedo, nem em pop-up, nem repetidamente.
+Config.Offers = {
+	MinHatched = 5, -- só depois do loop principal ser entendido (tutorial já ficou para trás)
+	MinSessions = 2, -- nunca na primeira sessão
+	MinSessionSeconds = 600, -- nunca nos primeiros 10 min de uma sessão
+	CooldownSeconds = 86400, -- no máximo 1 oferta passiva por dia
+	MaxPerDay = 1,
+}
+
+-- Monetização opcional. DESLIGADA: não há MarketplaceService, ProcessReceipt nem preço em Robux ativo.
+-- Os ids 0 são marcadores; só preencha depois do loop estar testado no Studio com DataStore e multiplayer.
+Config.Monetization = {
+	Enabled = false,
+	MaxReceipts = 200,
+	Passes = {
+		auto_collect = { id = "auto_collect", name = "Coleta automática", priceRobux = 199, gamePassId = 0, repeatable = false,
+			grants = "Coleta o ovo chocado sozinho quando você está no jogo. Não aumenta renda nem sorte.", duration = "Permanente" },
+		founder = { id = "founder", name = "Pacote Fundador (cosmético)", priceRobux = 399, gamePassId = 0, repeatable = false,
+			grants = "Cerca dourada + título no painel. Só visual.", duration = "Permanente", cosmetic = "fence_gold" },
+	},
+	Products = {
+		boost_small = { id = "boost_small", name = "Impulso de visitantes", priceRobux = 25, productId = 0, repeatable = true,
+			grants = "+50% de renda por 10 min. Não acumula além de 30 min.", duration = "10 minutos", boostMult = 1.5, boostSeconds = 600 },
+		eggs_3 = { id = "eggs_3", name = "3 ovos", priceRobux = 75, productId = 0, repeatable = true,
+			grants = "3 ovos (mesmas chances de todos; chances visíveis).", duration = "Consumível", eggs = 3 },
+	},
+}
+
+-- Telemetria (AnalyticsService). Sem dados pessoais: só nomes de eventos, números e ids de itens.
+Config.Analytics = { Enabled = true, Debug = false }
+-- Eventos que o cliente pode reportar (lista fechada; o servidor ignora qualquer outro).
+Config.ClientEvents = { shop_view = true, today_view = true, store_guide_view = true, egg_view = true }
 
 -- Mundo (usado pelo ParkService). Coordenadas X,Z do centro de cada parque de 44x44 studs.
 Config.Plots = {
@@ -156,7 +259,7 @@ function Logic.newData(cfg, now)
 		dinos = {},
 		nextId = 1,
 		placed = {},
-		upgrades = { slots = 0, income = 0, incubator = 0 },
+		upgrades = { slots = 0, income = 0, incubator = 0, renovation = 0 },
 		owned = {},
 		fence = "wood",
 		incubating = nil,
@@ -164,6 +267,17 @@ function Logic.newData(cfg, now)
 		hatched = 0,
 		tutorialDismissed = false,
 		lastSeen = now,
+		-- v2: retenção / economia / métricas
+		stats = { coinsEarned = 0, eggsBought = 0, placements = 0, upgradesBought = 0, shopBuys = 0 },
+		eco = { src = {}, snk = {} },
+		login = { firstDay = nil, lastDay = -1, lastClaimDay = -1, cycle = 0, totalClaims = 0, sessions = 0 },
+		daily = { day = -1, base = {}, claimed = {}, bonusClaimed = false },
+		goalsClaimed = {},
+		discovered = {},
+		boost = nil,
+		offers = { lastShownAt = 0, day = -1, count = 0 },
+		receipts = {},
+		passes = {},
 	}
 end
 
@@ -190,6 +304,7 @@ function Logic.migrate(raw, cfg, now)
 	d.eggs = floor(num(raw.eggs, d.eggs, 0, 1e6))
 	d.nextId = floor(num(raw.nextId, 1, 1, 1e9))
 	d.hatched = floor(num(raw.hatched, 0, 0, 1e9))
+	d.schemaVersion = cfg.SchemaVersion
 	d.tutorialDismissed = raw.tutorialDismissed == true
 	d.lastSeen = num(raw.lastSeen, now, 0, now)
 	local ids = {}
@@ -233,6 +348,88 @@ function Logic.migrate(raw, cfg, now)
 	if type(raw.missions) == "table" then
 		for k in pairs(d.missions) do
 			d.missions[k] = raw.missions[k] == true
+		end
+	end
+	-- v2 (saves v1 não têm estes campos: ficam nos padrões; espécies já possuídas contam como descobertas)
+	if type(raw.stats) == "table" then
+		for k in pairs(d.stats) do
+			d.stats[k] = floor(num(raw.stats[k], 0, 0, 1e12))
+		end
+	end
+	if type(raw.eco) == "table" then
+		for _, flow in ipairs({ "src", "snk" }) do
+			if type(raw.eco[flow]) == "table" then
+				local n = 0
+				for reason, v in pairs(raw.eco[flow]) do
+					if type(reason) == "string" and #reason <= 24 and n < 40 then
+						n = n + 1
+						d.eco[flow][reason] = floor(num(v, 0, 0, 1e13))
+					end
+				end
+			end
+		end
+	end
+	if type(raw.login) == "table" then
+		local l, rl = d.login, raw.login
+		l.firstDay = rl.firstDay ~= nil and floor(num(rl.firstDay, 0, 0, 1e6)) or nil
+		l.lastDay = floor(num(rl.lastDay, -1, -1, 1e6))
+		l.lastClaimDay = floor(num(rl.lastClaimDay, -1, -1, 1e6))
+		l.cycle = floor(num(rl.cycle, 0, 0, #cfg.DailyRewards - 1))
+		l.totalClaims = floor(num(rl.totalClaims, 0, 0, 1e6))
+		l.sessions = floor(num(rl.sessions, 0, 0, 1e6))
+	end
+	if type(raw.daily) == "table" then
+		d.daily.day = floor(num(raw.daily.day, -1, -1, 1e6))
+		d.daily.bonusClaimed = raw.daily.bonusClaimed == true
+		for _, q in ipairs(cfg.DailyQuestPool) do
+			if type(raw.daily.claimed) == "table" and raw.daily.claimed[q.id] == true then
+				d.daily.claimed[q.id] = true
+			end
+		end
+		if type(raw.daily.base) == "table" then
+			for k in pairs(d.stats) do
+				d.daily.base[k] = floor(num(raw.daily.base[k], 0, 0, 1e12))
+			end
+			d.daily.base.hatched = floor(num(raw.daily.base.hatched, 0, 0, 1e12))
+		end
+	end
+	for _, g in ipairs(cfg.Goals) do
+		if type(raw.goalsClaimed) == "table" and raw.goalsClaimed[g.id] == true then
+			d.goalsClaimed[g.id] = true
+		end
+	end
+	for _, dino in ipairs(d.dinos) do
+		d.discovered[dino.species] = true
+	end
+	if type(raw.discovered) == "table" then
+		for id in pairs(cfg.Species) do
+			if raw.discovered[id] == true then
+				d.discovered[id] = true
+			end
+		end
+	end
+	if type(raw.boost) == "table" and type(raw.boost.endsAt) == "number" then
+		d.boost = { mult = num(raw.boost.mult, 1, 1, 3), endsAt = num(raw.boost.endsAt, 0, 0, now + cfg.MaxBoostSeconds) }
+	end
+	if type(raw.offers) == "table" then
+		d.offers.lastShownAt = num(raw.offers.lastShownAt, 0, 0, now)
+		d.offers.day = floor(num(raw.offers.day, -1, -1, 1e6))
+		d.offers.count = floor(num(raw.offers.count, 0, 0, 1000))
+	end
+	if type(raw.receipts) == "table" then
+		local n = 0
+		for id, t in pairs(raw.receipts) do
+			if type(id) == "string" and #id <= 64 and type(t) == "number" and n < cfg.Monetization.MaxReceipts then
+				n = n + 1
+				d.receipts[id] = t
+			end
+		end
+	end
+	if type(raw.passes) == "table" then
+		for id in pairs(cfg.Monetization.Passes) do
+			if raw.passes[id] == true then
+				d.passes[id] = true
+			end
 		end
 	end
 	return d
@@ -292,7 +489,8 @@ function Logic.isPlaced(data, id)
 end
 
 -- Renda por pagamento (a cada Config.IncomeInterval segundos), sem arredondar.
-function Logic.incomeRaw(data, cfg)
+-- 'now' (opcional) inclui impulso ativo e evento do dia; sem 'now' devolve a renda-base.
+function Logic.incomeRaw(data, cfg, now)
 	local sum = 0
 	for _, id in ipairs(data.placed) do
 		local dino = Logic.findDino(data, id)
@@ -300,11 +498,15 @@ function Logic.incomeRaw(data, cfg)
 			sum = sum + cfg.Species[dino.species].income
 		end
 	end
-	return sum * (1 + data.upgrades.income * cfg.Upgrades.income.bonus)
+	local raw = sum * (1 + data.upgrades.income * cfg.Upgrades.income.bonus + data.upgrades.renovation * cfg.Upgrades.renovation.bonus)
+	if now then
+		raw = raw * Logic.boostMult(data, now) * (1 + Logic.eventEffects(cfg, now).income)
+	end
+	return raw
 end
 
-function Logic.incomePerTick(data, cfg)
-	return floor(Logic.incomeRaw(data, cfg) + 0.5)
+function Logic.incomePerTick(data, cfg, now)
+	return floor(Logic.incomeRaw(data, cfg, now) + 0.5)
 end
 
 function Logic.incubateSeconds(data, cfg)
@@ -367,7 +569,9 @@ function Logic.shopStock(cfg, now)
 	end
 	local ids = {}
 	for _, item in ipairs(cfg.ShopCatalog) do
-		ids[#ids + 1] = item.id
+		if not item.rewardOnly then
+			ids[#ids + 1] = item.id
+		end
 	end
 	for i = #ids, 2, -1 do
 		local j = nextRand() % i + 1
@@ -398,21 +602,23 @@ local function listHas(list, v)
 	return false
 end
 
-function Logic.buyShop(data, cfg, itemId, stock)
+function Logic.buyShop(data, cfg, itemId, stock, now)
 	if type(itemId) ~= "string" then
 		return false, "Item inválido."
 	end
 	local item = Logic.catalogItem(cfg, itemId)
-	if not item or not listHas(stock, itemId) then
+	if not item or item.rewardOnly or not listHas(stock, itemId) then
 		return false, "Esse item não está na loja agora."
 	end
 	if data.owned[itemId] then
 		return false, "Você já tem esse item."
 	end
-	if data.coins < item.price then
+	local price = Logic.shopPrice(cfg, item, now)
+	if data.coins < price then
 		return false, "Moedas insuficientes."
 	end
-	data.coins = data.coins - item.price
+	Logic.spend(data, price, "shop")
+	data.stats.shopBuys = data.stats.shopBuys + 1
 	data.owned[itemId] = true
 	if item.kind == "fence" then
 		data.fence = itemId
@@ -443,19 +649,22 @@ function Logic.buyUpgrade(data, cfg, key)
 	if data.coins < cost then
 		return false, "Moedas insuficientes."
 	end
-	data.coins = data.coins - cost
+	Logic.spend(data, cost, "upgrade")
+	data.stats.upgradesBought = data.stats.upgradesBought + 1
 	data.upgrades[key] = data.upgrades[key] + 1
 	return true, cfg.Upgrades[key].name .. " melhorada!"
 end
 
-function Logic.buyEgg(data, cfg)
-	if data.eggs >= 99 then
+function Logic.buyEgg(data, cfg, now)
+	if data.eggs >= cfg.MaxEggs then
 		return false, "Você já tem ovos demais."
 	end
-	if data.coins < cfg.EggCost then
+	local cost = Logic.eggCost(data, cfg, now)
+	if data.coins < cost then
 		return false, "Moedas insuficientes."
 	end
-	data.coins = data.coins - cfg.EggCost
+	Logic.spend(data, cost, "egg")
+	data.stats.eggsBought = data.stats.eggsBought + 1
 	data.eggs = data.eggs + 1
 	return true, "Ovo comprado!"
 end
@@ -493,6 +702,7 @@ function Logic.collect(data, cfg, now, rnd)
 	data.nextId = data.nextId + 1
 	data.dinos[#data.dinos + 1] = { id = id, species = species }
 	data.hatched = data.hatched + 1
+	data.discovered[species] = true
 	data.incubating = nil
 	return true, "Nasceu um " .. cfg.Species[species].name .. "!", species
 end
@@ -511,6 +721,7 @@ function Logic.place(data, cfg, dinoId)
 		return false, "Sem habitat livre. Compre um novo em Melhorias."
 	end
 	data.placed[#data.placed + 1] = dinoId
+	data.stats.placements = data.stats.placements + 1
 	return true, "Dinossauro no habitat!"
 end
 
@@ -532,7 +743,7 @@ function Logic.checkMissions(data, cfg)
 	local done = {}
 	local function complete(m)
 		data.missions[m.id] = true
-		data.coins = data.coins + m.reward
+		Logic.earn(data, m.reward, "mission")
 		done[#done + 1] = { text = m.text, reward = m.reward }
 	end
 	local upgraded = data.upgrades.slots + data.upgrades.income + data.upgrades.incubator > 0
@@ -548,6 +759,606 @@ function Logic.checkMissions(data, cfg)
 		end
 	end
 	return done
+end
+
+-- ===== Economia: toda moeda que entra/sai passa por earn/spend (livro-razão em data.eco) =====
+function Logic.earn(data, amount, reason)
+	amount = floor(num(amount, 0, 0, 1e12))
+	local room = 1e12 - data.coins
+	if amount > room then
+		amount = room
+	end
+	if amount <= 0 then
+		return 0
+	end
+	data.coins = data.coins + amount
+	data.stats.coinsEarned = math.min(data.stats.coinsEarned + amount, 1e12)
+	data.eco.src[reason] = (data.eco.src[reason] or 0) + amount
+	return amount
+end
+
+function Logic.spend(data, amount, reason)
+	data.coins = data.coins - amount
+	data.eco.snk[reason] = (data.eco.snk[reason] or 0) + amount
+end
+
+function Logic.ecoSnapshot(data)
+	local snap = { src = {}, snk = {} }
+	for k, v in pairs(data.eco.src) do
+		snap.src[k] = v
+	end
+	for k, v in pairs(data.eco.snk) do
+		snap.snk[k] = v
+	end
+	return snap
+end
+
+-- Diferenças do livro-razão desde o snapshot: lista de { flow = "source"|"sink", reason, amount }.
+function Logic.ecoDiff(snap, data)
+	local out = {}
+	for _, pair in ipairs({ { "src", "source" }, { "snk", "sink" } }) do
+		for reason, v in pairs(data.eco[pair[1]]) do
+			local delta = v - (snap[pair[1]][reason] or 0)
+			if delta > 0 then
+				out[#out + 1] = { flow = pair[2], reason = reason, amount = delta }
+			end
+		end
+	end
+	table.sort(out, function(a, b)
+		return a.flow .. a.reason < b.flow .. b.reason
+	end)
+	return out
+end
+
+-- ===== Tempo: dia de jogo, dia da semana, eventos previsíveis =====
+function Logic.dayIndex(cfg, now)
+	return floor((now + cfg.DayOffsetSeconds) / cfg.DaySeconds)
+end
+
+function Logic.dayEndsAt(cfg, now)
+	return (Logic.dayIndex(cfg, now) + 1) * cfg.DaySeconds - cfg.DayOffsetSeconds
+end
+
+-- 0 = segunda ... 6 = domingo (o dia 0 do Unix, 01/01/1970, foi quinta-feira)
+function Logic.weekday(cfg, now)
+	return (Logic.dayIndex(cfg, now) + 3) % 7
+end
+
+local function eventOnWeekday(ev, wd)
+	return listHas(ev.days, wd)
+end
+
+function Logic.activeEvents(cfg, now)
+	local wd = Logic.weekday(cfg, now)
+	local out = {}
+	for _, ev in ipairs(cfg.Events) do
+		if eventOnWeekday(ev, wd) then
+			local extra = 0
+			while extra < 6 and eventOnWeekday(ev, (wd + extra + 1) % 7) do
+				extra = extra + 1
+			end
+			out[#out + 1] = { id = ev.id, name = ev.name, desc = ev.desc, endsAt = Logic.dayEndsAt(cfg, now) + extra * cfg.DaySeconds }
+		end
+	end
+	return out
+end
+
+function Logic.upcomingEvents(cfg, now)
+	local wd = Logic.weekday(cfg, now)
+	local out = {}
+	for _, ev in ipairs(cfg.Events) do
+		if not eventOnWeekday(ev, wd) then
+			for k = 1, 7 do
+				if eventOnWeekday(ev, (wd + k) % 7) then
+					out[#out + 1] = { id = ev.id, name = ev.name, desc = ev.desc, startsAt = Logic.dayEndsAt(cfg, now) + (k - 1) * cfg.DaySeconds }
+					break
+				end
+			end
+		end
+	end
+	table.sort(out, function(a, b)
+		return a.startsAt < b.startsAt
+	end)
+	return out
+end
+
+function Logic.eventEffects(cfg, now)
+	local fx = { income = 0, eggDiscount = 0, shopDiscount = 0 }
+	local wd = Logic.weekday(cfg, now)
+	for _, ev in ipairs(cfg.Events) do
+		if eventOnWeekday(ev, wd) then
+			fx.income = fx.income + (ev.income or 0)
+			fx.eggDiscount = math.max(fx.eggDiscount, ev.eggDiscount or 0)
+			fx.shopDiscount = math.max(fx.shopDiscount, ev.shopDiscount or 0)
+		end
+	end
+	return fx
+end
+
+function Logic.boostMult(data, now)
+	if data.boost and data.boost.endsAt > now then
+		return data.boost.mult
+	end
+	return 1
+end
+
+function Logic.grantBoost(data, cfg, mult, seconds, now)
+	local active = data.boost and data.boost.endsAt > now
+	local from = active and data.boost.endsAt or now
+	local endsAt = math.min(from + seconds, now + cfg.MaxBoostSeconds)
+	data.boost = { mult = math.max(mult, active and data.boost.mult or 1), endsAt = endsAt }
+end
+
+-- Custo do ovo: cresce devagar com o progresso (sumidouro) e cai nos eventos.
+function Logic.eggCost(data, cfg, now)
+	local growth = math.min(floor(data.hatched / cfg.EggCostStepEvery) * cfg.EggCostStep, cfg.EggCostMaxGrowth)
+	local cost = cfg.EggCost * (1 + growth)
+	if now then
+		cost = cost * (1 - Logic.eventEffects(cfg, now).eggDiscount)
+	end
+	return math.max(1, floor(cost + 0.5))
+end
+
+function Logic.shopPrice(cfg, item, now)
+	local price = item.price
+	if now then
+		price = price * (1 - Logic.eventEffects(cfg, now).shopDiscount)
+	end
+	return math.max(1, floor(price + 0.5))
+end
+
+-- ===== Estatísticas, missões diárias, metas =====
+local STAT_KEYS = { "hatched", "coinsEarned", "eggsBought", "placements", "upgradesBought", "shopBuys" }
+
+local function cosmeticCount(data, cfg)
+	local n = 0
+	for _, item in ipairs(cfg.ShopCatalog) do
+		if data.owned[item.id] and not item.rewardOnly then
+			n = n + 1
+		end
+	end
+	return n
+end
+
+function Logic.statValue(data, cfg, key)
+	if key == "hatched" then
+		return data.hatched
+	elseif key == "discovered" then
+		local n = 0
+		for _ in pairs(data.discovered) do
+			n = n + 1
+		end
+		return n
+	elseif key == "slots" then
+		return Logic.slots(data, cfg)
+	elseif key == "incomeLevel" then
+		return data.upgrades.income
+	elseif key == "upgradesTotal" then
+		local total = 0
+		for _, k in ipairs(cfg.UpgradeOrder) do
+			total = total + data.upgrades[k]
+		end
+		return total
+	elseif key == "cosmetics" then
+		return cosmeticCount(data, cfg)
+	end
+	return data.stats[key] or 0
+end
+
+function Logic.rollDay(data, cfg, now)
+	local today = Logic.dayIndex(cfg, now)
+	if data.daily.day == today then
+		return false
+	end
+	local base = {}
+	for _, k in ipairs(STAT_KEYS) do
+		base[k] = Logic.statValue(data, cfg, k)
+	end
+	data.daily = { day = today, base = base, claimed = {}, bonusClaimed = false }
+	return true
+end
+
+-- Missões do dia: iguais para todos os jogadores, determinísticas pelo dia.
+function Logic.dailyQuests(cfg, day)
+	local state = (day * 7919) % 2147483646 + 1
+	local function nextRand()
+		state = (state * 16807) % 2147483647
+		return state
+	end
+	local idx = {}
+	for i = 1, #cfg.DailyQuestPool do
+		idx[i] = i
+	end
+	for i = #idx, 2, -1 do
+		local j = nextRand() % i + 1
+		idx[i], idx[j] = idx[j], idx[i]
+	end
+	local out = {}
+	for i = 1, math.min(cfg.DailyQuestCount, #idx) do
+		out[i] = cfg.DailyQuestPool[idx[i]]
+	end
+	return out
+end
+
+local function questProgress(data, cfg, q)
+	local base = data.daily.base[q.stat]
+	local cur = Logic.statValue(data, cfg, q.stat)
+	if base == nil then
+		return 0
+	end
+	return math.max(0, math.min(q.target, cur - base))
+end
+
+-- Entrega moedas/ovos/cosmético; cosmético repetido vira moedas (nunca se perde recompensa).
+local function applyBundle(data, cfg, coins, eggs, cosmetic, reason)
+	local parts = {}
+	if cosmetic then
+		if data.owned[cosmetic] then
+			coins = (coins or 0) + cfg.DailyCosmeticFallbackCoins
+		else
+			data.owned[cosmetic] = true
+			local item = Logic.catalogItem(cfg, cosmetic)
+			parts[#parts + 1] = item and item.name or cosmetic
+		end
+	end
+	if coins and coins > 0 then
+		local got = Logic.earn(data, coins, reason)
+		parts[#parts + 1] = got .. " moedas"
+	end
+	if eggs and eggs > 0 then
+		data.eggs = math.min(data.eggs + eggs, 1e6)
+		parts[#parts + 1] = eggs .. (eggs == 1 and " ovo" or " ovos")
+	end
+	return table.concat(parts, " + ")
+end
+
+function Logic.claimQuest(data, cfg, id, now)
+	Logic.rollDay(data, cfg, now)
+	if type(id) ~= "string" then
+		return false, "Missão inválida."
+	end
+	for _, q in ipairs(Logic.dailyQuests(cfg, data.daily.day)) do
+		if q.id == id then
+			if data.daily.claimed[id] then
+				return false, "Você já recebeu essa recompensa."
+			end
+			if questProgress(data, cfg, q) < q.target then
+				return false, "Missão ainda não concluída."
+			end
+			data.daily.claimed[id] = true
+			local text = applyBundle(data, cfg, q.reward, 0, nil, "quest")
+			return true, "Missão concluída: " .. text .. "!"
+		end
+	end
+	return false, "Essa missão não é de hoje."
+end
+
+function Logic.claimQuestBonus(data, cfg, now)
+	Logic.rollDay(data, cfg, now)
+	if data.daily.bonusClaimed then
+		return false, "Bônus do dia já recebido."
+	end
+	for _, q in ipairs(Logic.dailyQuests(cfg, data.daily.day)) do
+		if not data.daily.claimed[q.id] then
+			return false, "Receba todas as missões do dia primeiro."
+		end
+	end
+	data.daily.bonusClaimed = true
+	local text = applyBundle(data, cfg, cfg.DailyAllBonus.coins, cfg.DailyAllBonus.eggs, nil, "quest")
+	return true, "Bônus do dia: " .. text .. "!"
+end
+
+function Logic.goalById(cfg, id)
+	for _, g in ipairs(cfg.Goals) do
+		if g.id == id then
+			return g
+		end
+	end
+	return nil
+end
+
+function Logic.claimGoal(data, cfg, id)
+	local g = type(id) == "string" and Logic.goalById(cfg, id) or nil
+	if not g then
+		return false, "Meta inválida."
+	end
+	if data.goalsClaimed[id] then
+		return false, "Você já recebeu essa recompensa."
+	end
+	if Logic.statValue(data, cfg, g.stat) < g.target then
+		return false, "Meta ainda não concluída."
+	end
+	data.goalsClaimed[id] = true
+	local text = applyBundle(data, cfg, g.reward.coins, g.reward.eggs, g.reward.cosmetic, "goal")
+	return true, "Meta concluída: " .. text .. "!"
+end
+
+-- ===== Recompensa diária (calendário de 7; faltar um dia não pune) =====
+function Logic.dailyRewardCoins(data, cfg, r)
+	if not r.coinsMinutes then
+		return 0
+	end
+	local perMinute = Logic.incomeRaw(data, cfg) * 60 / cfg.IncomeInterval
+	local c = floor(perMinute * r.coinsMinutes + 0.5)
+	return math.max(r.coinsMin, math.min(r.coinsMax, c))
+end
+
+function Logic.rewardLabel(data, cfg, r)
+	local parts = {}
+	if r.coinsMinutes then
+		parts[#parts + 1] = Logic.dailyRewardCoins(data, cfg, r) .. " moedas"
+	end
+	if r.eggs then
+		parts[#parts + 1] = r.eggs .. (r.eggs == 1 and " ovo" or " ovos")
+	end
+	if r.boost then
+		parts[#parts + 1] = ("Impulso +%d%% por %d min"):format(floor((cfg.DailyBoost.mult - 1) * 100 + 0.5), floor(cfg.DailyBoost.seconds / 60))
+	end
+	if r.cosmetic then
+		local item = Logic.catalogItem(cfg, r.cosmetic)
+		local name = item and item.name or r.cosmetic
+		if data.owned[r.cosmetic] then
+			name = ("%s (você já tem: +%d moedas no lugar)"):format(name, cfg.DailyCosmeticFallbackCoins)
+		end
+		parts[#parts + 1] = name
+	end
+	return table.concat(parts, " + ")
+end
+
+function Logic.claimDaily(data, cfg, now)
+	local today = Logic.dayIndex(cfg, now)
+	local l = data.login
+	if l.lastClaimDay == today then
+		return false, "Você já recebeu hoje. Volte amanhã!"
+	end
+	local r = cfg.DailyRewards[l.cycle + 1]
+	local label = Logic.rewardLabel(data, cfg, r)
+	local coins = Logic.dailyRewardCoins(data, cfg, r)
+	if r.boost then
+		Logic.grantBoost(data, cfg, cfg.DailyBoost.mult, cfg.DailyBoost.seconds, now)
+	end
+	applyBundle(data, cfg, coins, r.eggs, r.cosmetic, "daily")
+	l.lastClaimDay = today
+	l.cycle = (l.cycle + 1) % #cfg.DailyRewards
+	l.totalClaims = l.totalClaims + 1
+	return true, "Recompensa diária: " .. label .. "!", l.cycle
+end
+
+-- Início de sessão: devolve dados para telemetria (dias desde o 1º acesso etc.).
+function Logic.startSession(data, cfg, now)
+	local today = Logic.dayIndex(cfg, now)
+	local l = data.login
+	if l.firstDay == nil then
+		l.firstDay = today
+	end
+	local isNewDay = l.lastDay ~= today
+	l.lastDay = today
+	l.sessions = l.sessions + 1
+	Logic.rollDay(data, cfg, now)
+	return { sessions = l.sessions, daysSinceFirst = math.max(0, today - l.firstDay), isNewDay = isNewDay }
+end
+
+-- Marcos de onboarding (telemetria de funil): lista ordenada de { name, reached }.
+function Logic.onboardingFlags(data)
+	return {
+		{ name = "first_hatch", reached = data.hatched > 0 },
+		{ name = "first_place", reached = data.stats.placements > 0 },
+		{ name = "first_upgrade", reached = data.stats.upgradesBought > 0 },
+		{ name = "first_shop_buy", reached = data.stats.shopBuys > 0 },
+		{ name = "first_daily_claim", reached = data.login.totalClaims > 0 },
+	}
+end
+
+-- Dicas contextuais e discretas (texto no painel "Hoje"; nunca pop-up, nunca compra).
+function Logic.hints(data, cfg, now)
+	local out = {}
+	if #data.placed < Logic.slots(data, cfg) and #data.dinos > #data.placed then
+		out[#out + 1] = "Você tem um dinossauro guardado e um habitat livre."
+	end
+	if data.eggs > 0 and not data.incubating then
+		out[#out + 1] = "Há um ovo esperando na incubadora."
+	end
+	local slotCost = Logic.upgradeCost(data, cfg, "slots")
+	if slotCost and data.coins >= slotCost then
+		out[#out + 1] = "Você já tem moedas para liberar um novo habitat."
+	end
+	return out
+end
+
+-- ===== Ofertas futuras (Robux): quando é aceitável MOSTRAR uma oferta passiva =====
+function Logic.offerEligible(data, cfg, ctx, now)
+	local o = cfg.Offers
+	if not cfg.Monetization.Enabled then
+		return false, "monetização desligada"
+	end
+	if data.hatched < o.MinHatched then
+		return false, "jogador ainda no começo"
+	end
+	if not data.tutorialDismissed and data.hatched < o.MinHatched * 2 then
+		return false, "tutorial ainda ativo"
+	end
+	if data.login.sessions < o.MinSessions then
+		return false, "primeira sessão"
+	end
+	if (ctx.sessionSeconds or 0) < o.MinSessionSeconds then
+		return false, "sessão recém-iniciada"
+	end
+	if now - data.offers.lastShownAt < o.CooldownSeconds then
+		return false, "intervalo mínimo entre ofertas"
+	end
+	if data.offers.day == Logic.dayIndex(cfg, now) and data.offers.count >= o.MaxPerDay then
+		return false, "limite diário"
+	end
+	return true, "ok"
+end
+
+function Logic.markOfferShown(data, cfg, now)
+	local day = Logic.dayIndex(cfg, now)
+	if data.offers.day ~= day then
+		data.offers.day = day
+		data.offers.count = 0
+	end
+	data.offers.count = data.offers.count + 1
+	data.offers.lastShownAt = now
+end
+
+-- ===== Compras (desligadas): concessão idempotente por recibo =====
+local function pruneReceipts(data, cfg)
+	local n = 0
+	for _ in pairs(data.receipts) do
+		n = n + 1
+	end
+	while n > cfg.Monetization.MaxReceipts do
+		local oldestId, oldestT
+		for id, t in pairs(data.receipts) do
+			if oldestT == nil or t < oldestT then
+				oldestId, oldestT = id, t
+			end
+		end
+		data.receipts[oldestId] = nil
+		n = n - 1
+	end
+end
+
+-- Devolve "granted" | "already" | "unknown" | "invalid". Chamada repetida com o mesmo recibo NÃO concede de novo.
+function Logic.processReceipt(data, cfg, receiptId, productKey, now)
+	if type(receiptId) ~= "string" or #receiptId == 0 or #receiptId > 64 then
+		return "invalid"
+	end
+	if data.receipts[receiptId] then
+		return "already"
+	end
+	local product = type(productKey) == "string" and cfg.Monetization.Products[productKey] or nil
+	if not product then
+		return "unknown"
+	end
+	if product.eggs then
+		data.eggs = math.min(data.eggs + product.eggs, 1e6)
+	end
+	if product.boostSeconds then
+		Logic.grantBoost(data, cfg, product.boostMult, product.boostSeconds, now)
+	end
+	data.receipts[receiptId] = now
+	pruneReceipts(data, cfg)
+	return "granted"
+end
+
+function Logic.grantPass(data, cfg, passKey)
+	local pass = type(passKey) == "string" and cfg.Monetization.Passes[passKey] or nil
+	if not pass then
+		return false
+	end
+	data.passes[passKey] = true
+	if pass.cosmetic then
+		data.owned[pass.cosmetic] = true
+	end
+	return true
+end
+
+-- ===== Guia da loja: o que cada compra concede, quanto dura e se repete (usado pelo cliente) =====
+function Logic.storeGuide(cfg)
+	local out = { coins = {}, robux = {}, robuxEnabled = cfg.Monetization.Enabled }
+	out.coins[#out.coins + 1] = {
+		name = "Ovo", price = cfg.EggCost .. "+ moedas", grants = "1 ovo; as chances aparecem na aba Ovos.",
+		duration = "Consumível", repeatable = "Pode comprar quantas vezes quiser (o preço sobe devagar com o progresso)",
+	}
+	for _, key in ipairs(cfg.UpgradeOrder) do
+		local def = cfg.Upgrades[key]
+		out.coins[#out.coins + 1] = {
+			name = def.name, price = def.costs[1] .. " a " .. def.costs[#def.costs] .. " moedas", grants = def.desc,
+			duration = "Permanente", repeatable = ("Até o nível %d"):format(def.maxLevel),
+		}
+	end
+	out.coins[#out.coins + 1] = {
+		name = "Decorações e cercas", price = "45 a 1500 moedas", grants = "Só visual: sem vantagem de jogo.",
+		duration = "Permanente", repeatable = "Compra única de cada item",
+	}
+	for _, p in pairs(cfg.Monetization.Passes) do
+		out.robux[#out.robux + 1] = { name = p.name, price = p.priceRobux .. " Robux", grants = p.grants, duration = p.duration, repeatable = p.repeatable and "Pode comprar de novo" or "Compra única" }
+	end
+	for _, p in pairs(cfg.Monetization.Products) do
+		out.robux[#out.robux + 1] = { name = p.name, price = p.priceRobux .. " Robux", grants = p.grants, duration = p.duration, repeatable = p.repeatable and "Pode comprar de novo" or "Compra única" }
+	end
+	table.sort(out.robux, function(a, b)
+		return a.name < b.name
+	end)
+	return out
+end
+
+-- ===== Visão para o cliente (somente leitura): tudo que o painel "Hoje" mostra =====
+function Logic.retentionView(data, cfg, now)
+	Logic.rollDay(data, cfg, now)
+	local today = Logic.dayIndex(cfg, now)
+	local l = data.login
+	local view = { claimable = 0, resetsAt = Logic.dayEndsAt(cfg, now) }
+
+	local canClaim = l.lastClaimDay ~= today
+	local days = {}
+	for i, r in ipairs(cfg.DailyRewards) do
+		days[i] = { label = Logic.rewardLabel(data, cfg, r), claimed = i <= l.cycle, next = i == l.cycle + 1 }
+	end
+	view.daily = { canClaim = canClaim, days = days, totalClaims = l.totalClaims }
+	if canClaim then
+		view.claimable = view.claimable + 1
+	end
+
+	local quests, allClaimed = {}, true
+	for _, q in ipairs(Logic.dailyQuests(cfg, data.daily.day)) do
+		local progress = questProgress(data, cfg, q)
+		local claimed = data.daily.claimed[q.id] == true
+		local done = progress >= q.target
+		if not claimed then
+			allClaimed = false
+		end
+		if done and not claimed then
+			view.claimable = view.claimable + 1
+		end
+		quests[#quests + 1] = { id = q.id, text = q.text, progress = progress, target = q.target, reward = q.reward .. " moedas", claimed = claimed, done = done }
+	end
+	view.quests = quests
+	view.bonus = { text = cfg.DailyAllBonus.text, available = allClaimed and not data.daily.bonusClaimed, claimed = data.daily.bonusClaimed }
+	if view.bonus.available then
+		view.claimable = view.claimable + 1
+	end
+
+	local goals = {}
+	for _, tier in ipairs({ "short", "mid", "long" }) do
+		for _, g in ipairs(cfg.Goals) do
+			if g.tier == tier then
+				local value = Logic.statValue(data, cfg, g.stat)
+				local claimed = data.goalsClaimed[g.id] == true
+				local done = value >= g.target
+				if done and not claimed then
+					view.claimable = view.claimable + 1
+				end
+				local text = {}
+				if g.reward.coins then text[#text + 1] = g.reward.coins .. " moedas" end
+				if g.reward.eggs then text[#text + 1] = g.reward.eggs .. (g.reward.eggs == 1 and " ovo" or " ovos") end
+				if g.reward.cosmetic then
+					local item = Logic.catalogItem(cfg, g.reward.cosmetic)
+					text[#text + 1] = item and item.name or g.reward.cosmetic
+				end
+				goals[#goals + 1] = {
+					id = g.id, tier = tier, text = g.text, progress = math.min(value, g.target), target = g.target,
+					reward = table.concat(text, " + "), claimed = claimed, done = done,
+				}
+			end
+		end
+	end
+	view.goals = goals
+
+	local dex = {}
+	for _, id in ipairs(cfg.SpeciesOrder) do
+		local sp = cfg.Species[id]
+		dex[#dex + 1] = { id = id, name = sp.name, rarity = sp.rarity, desc = sp.desc, discovered = data.discovered[id] == true }
+	end
+	view.dex = dex
+
+	view.events = { active = Logic.activeEvents(cfg, now), upcoming = Logic.upcomingEvents(cfg, now) }
+	view.boost = (data.boost and data.boost.endsAt > now) and { mult = data.boost.mult, endsAt = data.boost.endsAt } or false
+	view.hints = Logic.hints(data, cfg, now)
+	view.eggCost = Logic.eggCost(data, cfg, now)
+	return view
 end
 
 return Logic
@@ -756,6 +1567,194 @@ sharedFolder.Parent = RS
 local servicesFolder = Instance.new("Folder")
 servicesFolder.Name = "DinoParkServices"
 local serviceFiles = {
+	{ "ModuleScript", "Telemetry", [==[
+--!nonstrict
+-- Camada fina sobre o AnalyticsService: nunca quebra o jogo (tudo em pcall), sem dados pessoais
+-- (só nome do evento, números e ids de itens). Config.Analytics.Enabled=false desliga o envio.
+local AnalyticsService = game:GetService("AnalyticsService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
+
+local Telemetry = {}
+Telemetry.counts = {} -- contadores locais por evento (depuração; não persistem)
+
+-- Tipo de transação do AnalyticsService por motivo de entrada/saída de moedas.
+local TX_TYPE = {
+	income = "Gameplay", mission = "Onboarding", quest = "Gameplay", goal = "Gameplay",
+	daily = "TimedReward", offline = "TimedReward", egg = "Shop", upgrade = "Shop", shop = "Shop",
+}
+
+-- Até 3 campos extras, valores em texto curto.
+local function fieldsOf(fields)
+	if type(fields) ~= "table" then
+		return nil
+	end
+	local keys = {}
+	for k in pairs(fields) do
+		keys[#keys + 1] = k
+	end
+	table.sort(keys)
+	local out = {}
+	for i = 1, math.min(3, #keys) do
+		out[keys[i]] = string.sub(tostring(fields[keys[i]]), 1, 40)
+	end
+	return out
+end
+
+local function bump(name)
+	Telemetry.counts[name] = (Telemetry.counts[name] or 0) + 1
+end
+
+function Telemetry.event(player, name, value, fields)
+	bump(name)
+	if Config.Analytics.Debug then
+		print("[Telemetry]", name, value, fields)
+	end
+	if not Config.Analytics.Enabled then
+		return
+	end
+	local ok, err = pcall(function()
+		AnalyticsService:LogCustomEvent(player, name, value or 1, fieldsOf(fields))
+	end)
+	if not ok and Config.Analytics.Debug then
+		warn("[Telemetry] LogCustomEvent falhou: " .. tostring(err))
+	end
+end
+
+function Telemetry.economy(player, flow, reason, amount, balance)
+	bump("economy_" .. flow .. "_" .. reason)
+	if Config.Analytics.Debug then
+		print("[Telemetry] economia", flow, reason, amount, balance)
+	end
+	if not Config.Analytics.Enabled then
+		return
+	end
+	local ok, err = pcall(function()
+		local flowType = flow == "source" and Enum.AnalyticsEconomyFlowType.Source or Enum.AnalyticsEconomyFlowType.Sink
+		local txType = Enum.AnalyticsEconomyTransactionType[TX_TYPE[reason] or "Gameplay"]
+		AnalyticsService:LogEconomyEvent(player, flowType, "Coins", balance, amount, txType, reason)
+	end)
+	if not ok and Config.Analytics.Debug then
+		warn("[Telemetry] LogEconomyEvent falhou: " .. tostring(err))
+	end
+end
+
+function Telemetry.funnel(player, funnelName, funnelSessionId, step, stepName)
+	bump("funnel_" .. funnelName .. "_" .. stepName)
+	if Config.Analytics.Debug then
+		print("[Telemetry] funil", funnelName, step, stepName)
+	end
+	if not Config.Analytics.Enabled then
+		return
+	end
+	local ok, err = pcall(function()
+		AnalyticsService:LogFunnelStepEvent(player, funnelName, funnelSessionId, step, stepName)
+	end)
+	if not ok and Config.Analytics.Debug then
+		warn("[Telemetry] LogFunnelStepEvent falhou: " .. tostring(err))
+	end
+end
+
+return Telemetry
+]==] },
+	{ "ModuleScript", "MonetizationService", [==[
+--!nonstrict
+-- Compras com Robux: DESLIGADO por padrão (Config.Monetization.Enabled=false). Com a flag desligada este módulo
+-- não toca em MarketplaceService, não registra ProcessReceipt e não vende nada.
+-- NÃO TESTADO no Studio. Só ligue depois de o loop estar validado com DataStore real e multiplayer.
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared:WaitForChild("Config"))
+local Logic = require(Shared:WaitForChild("Logic"))
+
+local MonetizationService = {}
+MonetizationService.enabled = false
+
+local function productKeyById(productId)
+	for key, p in pairs(Config.Monetization.Products) do
+		if p.productId ~= 0 and p.productId == productId then
+			return key
+		end
+	end
+	return nil
+end
+
+local function passKeyById(passId)
+	for key, p in pairs(Config.Monetization.Passes) do
+		if p.gamePassId ~= 0 and p.gamePassId == passId then
+			return key
+		end
+	end
+	return nil
+end
+
+-- deps: { DataService, Telemetry, push }
+function MonetizationService.init(deps)
+	if not Config.Monetization.Enabled then
+		return false
+	end
+	local MarketplaceService = game:GetService("MarketplaceService")
+	MonetizationService.enabled = true
+
+	-- Idempotente: o mesmo PurchaseId nunca concede duas vezes (data.receipts, salvo junto com o inventário).
+	-- Só devolve PurchaseGranted depois de o dado estar SALVO; qualquer dúvida => NotProcessedYet (o Roblox repete).
+	MarketplaceService.ProcessReceipt = function(info)
+		local player = Players:GetPlayerByUserId(info.PlayerId)
+		local session = player and deps.DataService.get(player)
+		if not player or not session or not session.canSave then
+			return Enum.ProductPurchaseDecision.NotProcessedYet
+		end
+		local key = productKeyById(info.ProductId)
+		local result = Logic.processReceipt(session.data, Config, tostring(info.PurchaseId), key, os.time())
+		if result == "unknown" or result == "invalid" then
+			warn("[DinoPark] recibo desconhecido: produto " .. tostring(info.ProductId))
+			return Enum.ProductPurchaseDecision.NotProcessedYet
+		end
+		if result == "granted" then
+			deps.DataService.markDirty(player)
+			deps.Telemetry.event(player, "purchase_granted", info.CurrencySpent or 0, { product = key })
+		end
+		if session.dirty and not deps.DataService.save(player, true) then
+			return Enum.ProductPurchaseDecision.NotProcessedYet
+		end
+		deps.push(player)
+		return Enum.ProductPurchaseDecision.PurchaseGranted
+	end
+
+	MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player, passId, wasPurchased)
+		local key = passKeyById(passId)
+		local session = deps.DataService.get(player)
+		if wasPurchased and key and session and Logic.grantPass(session.data, Config, key) then
+			deps.DataService.markDirty(player)
+			deps.Telemetry.event(player, "purchase_granted", 1, { pass = key })
+			deps.DataService.save(player, true)
+			deps.push(player)
+		end
+	end)
+	return true
+end
+
+-- Abre a janela de compra do Roblox (a UI só chama isto por ação explícita do jogador).
+function MonetizationService.prompt(player, kind, key)
+	if not MonetizationService.enabled then
+		return false
+	end
+	local MarketplaceService = game:GetService("MarketplaceService")
+	if kind == "product" and Config.Monetization.Products[key] and Config.Monetization.Products[key].productId ~= 0 then
+		MarketplaceService:PromptProductPurchase(player, Config.Monetization.Products[key].productId)
+		return true
+	elseif kind == "pass" and Config.Monetization.Passes[key] and Config.Monetization.Passes[key].gamePassId ~= 0 then
+		MarketplaceService:PromptGamePassPurchase(player, Config.Monetization.Passes[key].gamePassId)
+		return true
+	end
+	return false
+end
+
+return MonetizationService
+]==] },
 	{ "ModuleScript", "DataService", [==[
 --!nonstrict
 -- Persistência com DataStoreService: trava de sessão (UpdateAsync), carga com tentativas, nunca sobrescreve
@@ -1158,6 +2157,8 @@ local Logic = require(Shared:WaitForChild("Logic"))
 
 local DataService = require(script.Parent:WaitForChild("DataService"))
 local ParkService = require(script.Parent:WaitForChild("ParkService"))
+local Telemetry = require(script.Parent:WaitForChild("Telemetry"))
+local MonetizationService = require(script.Parent:WaitForChild("MonetizationService"))
 
 local GameService = {}
 
@@ -1177,7 +2178,7 @@ local function buildState(player, session)
 	local shop = {}
 	for _, id in ipairs(stock) do
 		local item = Logic.catalogItem(Config, id)
-		shop[#shop + 1] = { id = id, name = item.name, kind = item.kind, price = item.price, owned = data.owned[id] == true }
+		shop[#shop + 1] = { id = id, name = item.name, kind = item.kind, price = Logic.shopPrice(Config, item, now), basePrice = item.price, owned = data.owned[id] == true }
 	end
 	local upgrades = {}
 	for _, key in ipairs(Config.UpgradeOrder) do
@@ -1203,7 +2204,9 @@ local function buildState(player, session)
 		serverNow = now,
 		incubating = data.incubating and { readyAt = data.incubating.readyAt } or false,
 		incubateSeconds = Logic.incubateSeconds(data, Config),
-		perTick = Logic.incomePerTick(data, Config),
+		perTick = Logic.incomePerTick(data, Config, now),
+		eggCost = Logic.eggCost(data, Config, now),
+		retention = Logic.retentionView(data, Config, now),
 		missions = data.missions,
 		hatched = data.hatched,
 		tutorialDismissed = data.tutorialDismissed,
@@ -1218,6 +2221,58 @@ local function push(player)
 	if session then
 		stateRE:FireClient(player, buildState(player, session))
 	end
+end
+
+-- Telemetria de economia: envia ao AnalyticsService só a diferença do livro-razão desde o último envio.
+local function flushEconomy(player, session)
+	for _, e in ipairs(Logic.ecoDiff(session.ecoSnap, session.data)) do
+		Telemetry.economy(player, e.flow, e.reason, e.amount, session.data.coins)
+	end
+	session.ecoSnap = Logic.ecoSnapshot(session.data)
+end
+
+local function reachedSteps(session)
+	local set = {}
+	for _, f in ipairs(Logic.onboardingFlags(session.data)) do
+		set[f.name] = f.reached
+	end
+	return set
+end
+
+-- Eventos de ação (funil, compras, falta de moedas). Sem dados pessoais.
+local function logAction(player, session, action, payload, success, message, extra, before)
+	if not success then
+		if message == "Moedas insuficientes." then
+			Telemetry.event(player, "insufficient_coins", 1, { action = action })
+		end
+		return
+	end
+	local data = session.data
+	if action == "buyEgg" then
+		Telemetry.event(player, "egg_bought", data.stats.eggsBought, { cost = Logic.eggCost(data, Config) })
+	elseif action == "collect" then
+		Telemetry.event(player, "dino_hatched", data.hatched, { species = extra })
+	elseif action == "buyUpgrade" then
+		Telemetry.event(player, "upgrade_bought", data.stats.upgradesBought, { key = payload.key, level = data.upgrades[payload.key] })
+	elseif action == "buyShop" then
+		Telemetry.event(player, "shop_buy", data.stats.shopBuys, { item = payload.id })
+	elseif action == "claimDaily" then
+		Telemetry.event(player, "daily_claim", data.login.totalClaims, { day = extra })
+	elseif action == "claimQuest" then
+		Telemetry.event(player, "quest_claim", 1, { quest = payload.id })
+	elseif action == "claimQuestBonus" then
+		Telemetry.event(player, "quest_bonus_claim", 1)
+	elseif action == "claimGoal" then
+		Telemetry.event(player, "goal_claim", 1, { goal = payload.id })
+	end
+	-- funil de onboarding: registra só marcos alcançados NESTA ação
+	local after = reachedSteps(session)
+	for i, f in ipairs(Logic.onboardingFlags(data)) do
+		if after[f.name] and not before[f.name] then
+			Telemetry.funnel(player, "onboarding", session.funnelId, i, f.name)
+		end
+	end
+	flushEconomy(player, session)
 end
 
 -- Após qualquer mudança: missões, marcar para salvar, redesenhar parque (se necessário) e enviar estado.
@@ -1239,7 +2294,7 @@ function handlers.getState()
 end
 
 function handlers.buyEgg(player, session)
-	local ok, msg = Logic.buyEgg(session.data, Config)
+	local ok, msg = Logic.buyEgg(session.data, Config, os.time())
 	if ok then commit(player, session, false) end
 	return ok, msg
 end
@@ -1251,11 +2306,11 @@ function handlers.incubate(player, session)
 end
 
 function handlers.collect(player, session)
-	local ok, msg = Logic.collect(session.data, Config, os.time(), function()
+	local ok, msg, species = Logic.collect(session.data, Config, os.time(), function()
 		return rng:NextNumber()
 	end)
 	if ok then commit(player, session, false) end
-	return ok, msg
+	return ok, msg, species
 end
 
 function handlers.place(player, session, payload)
@@ -1277,10 +2332,44 @@ function handlers.buyUpgrade(player, session, payload)
 end
 
 function handlers.buyShop(player, session, payload)
-	local stock = Logic.shopStock(Config, os.time())
-	local ok, msg = Logic.buyShop(session.data, Config, payload and payload.id, stock)
+	local now = os.time()
+	local stock = Logic.shopStock(Config, now)
+	local ok, msg = Logic.buyShop(session.data, Config, payload and payload.id, stock, now)
 	if ok then commit(player, session, true) end
 	return ok, msg
+end
+
+function handlers.claimDaily(player, session)
+	local ok, msg, cycle = Logic.claimDaily(session.data, Config, os.time())
+	if ok then commit(player, session, true) end
+	return ok, msg, cycle
+end
+
+function handlers.claimQuest(player, session, payload)
+	local ok, msg = Logic.claimQuest(session.data, Config, payload and payload.id, os.time())
+	if ok then commit(player, session, false) end
+	return ok, msg
+end
+
+function handlers.claimQuestBonus(player, session)
+	local ok, msg = Logic.claimQuestBonus(session.data, Config, os.time())
+	if ok then commit(player, session, false) end
+	return ok, msg
+end
+
+function handlers.claimGoal(player, session, payload)
+	local ok, msg = Logic.claimGoal(session.data, Config, payload and payload.id)
+	if ok then commit(player, session, true) end
+	return ok, msg
+end
+
+-- O cliente só pode reportar eventos de uma lista fechada (Config.ClientEvents); o resto é ignorado.
+function handlers.track(player, session, payload)
+	local name = payload and payload.name
+	if type(name) == "string" and Config.ClientEvents[name] then
+		Telemetry.event(player, name, 1)
+	end
+	return true, ""
 end
 
 function handlers.dismissTutorial(player, session)
@@ -1317,7 +2406,8 @@ local function onRequest(player, action, payload)
 	if not handler or not session then
 		return { ok = false, message = session and "Ação desconhecida." or "Ainda carregando..." }
 	end
-	local ok, success, message = pcall(handler, player, session, payload)
+	local before = reachedSteps(session)
+	local ok, success, message, extra = pcall(handler, player, session, payload)
 	if not ok then
 		warn("[DinoPark] erro em '" .. action .. "': " .. tostring(success))
 		return { ok = false, message = "Erro interno." }
@@ -1325,6 +2415,7 @@ local function onRequest(player, action, payload)
 	if action == "getState" then
 		push(player)
 	end
+	logAction(player, session, action, payload or {}, success == true, message, extra, before)
 	return { ok = success == true, message = message or "" }
 end
 
@@ -1345,19 +2436,37 @@ local function onPlayerAdded(player)
 		return
 	end
 	local data = session.data
+	session.joinedAt = os.time()
+	session.funnelId = ("%d_%d"):format(player.UserId, session.joinedAt)
+	session.ecoSnap = Logic.ecoSnapshot(data)
 	-- Ganhos offline: calculado no servidor com limite configurável.
 	local earned, elapsed = Logic.offlineEarnings(data, Config, os.time())
 	if earned > 0 and not session.isNew then
-		data.coins = data.coins + earned
+		Logic.earn(data, earned, "offline")
 		DataService.markDirty(player)
 		session.welcome = ("Bem-vindo de volta! Seus visitantes renderam %d moedas em %d min."):format(earned, math.floor(elapsed / 60))
 	end
 	data.lastSeen = os.time()
+	local info = Logic.startSession(data, Config, os.time())
+	DataService.markDirty(player)
+	Telemetry.event(player, "session_start", info.daysSinceFirst, { sessions = info.sessions })
+	if info.isNewDay and info.daysSinceFirst > 0 then
+		Telemetry.event(player, "return_day", info.daysSinceFirst)
+	end
+	if session.isNew then
+		Telemetry.funnel(player, "onboarding", session.funnelId, 0, "first_join")
+	end
+	flushEconomy(player, session)
 	ParkService.refresh(player, data)
 	push(player)
 end
 
 local function onPlayerRemoving(player)
+	local session = DataService.get(player)
+	if session and session.ecoSnap then
+		flushEconomy(player, session)
+		Telemetry.event(player, "session_end", os.time() - (session.joinedAt or os.time()))
+	end
 	ParkService.release(player)
 	DataService.release(player)
 	lastRequest[player] = nil
@@ -1377,6 +2486,7 @@ function GameService.start()
 	notifyRE.Name = "Notify"
 	notifyRE.Parent = remotes
 	requestRF.OnServerInvoke = onRequest
+	MonetizationService.init({ DataService = DataService, Telemetry = Telemetry, push = push }) -- no-op com a flag desligada
 
 	Players.PlayerAdded:Connect(function(player)
 		task.spawn(onPlayerAdded, player)
@@ -1391,9 +2501,9 @@ function GameService.start()
 		while true do
 			task.wait(Config.IncomeInterval)
 			for player, session in pairs(DataService.sessions()) do
-				local tick = Logic.incomePerTick(session.data, Config)
+				local tick = Logic.incomePerTick(session.data, Config, os.time())
 				if tick > 0 then
-					session.data.coins = session.data.coins + tick
+					Logic.earn(session.data, tick, "income")
 					DataService.markDirty(player)
 					push(player)
 				end
@@ -1413,7 +2523,10 @@ function GameService.start()
 			sinceSave = sinceSave + 1
 			if sinceSave >= Config.AutosaveSeconds then
 				sinceSave = 0
-				for player in pairs(DataService.sessions()) do
+				for player, session in pairs(DataService.sessions()) do
+					if session.ecoSnap then
+						flushEconomy(player, session)
+					end
 					-- touch=true: grava mesmo sem mudanças para renovar a trava de sessão
 					task.spawn(DataService.save, player, false, true, false)
 				end
@@ -1719,7 +2832,7 @@ local renderers = {}
 
 function renderers.egg()
 	panelTitle.Text = "Ovos e incubadora"
-	textRow(("Você tem %d ovo(s). Cada ovo custa %d moedas."):format(state.eggs, Config.EggCost), COLORS.text, 36)
+	textRow(("Você tem %d ovo(s). Cada ovo custa %d moedas."):format(state.eggs, (state.eggCost or Config.EggCost)), COLORS.text, 36)
 	local f = row(150)
 	label(f, "Chances ao chocar (o primeiro ovo é sempre um Leafling):", 14, COLORS.muted, { Position = UDim2.fromOffset(12, 6), Size = UDim2.new(1, -24, 0, 36) })
 	local y = 44
@@ -1747,8 +2860,8 @@ function renderers.egg()
 		label(inc, ("Incubação leva %ds."):format(state.incubateSeconds), 13, COLORS.muted, { Position = UDim2.fromOffset(12, 56), Size = UDim2.new(1, -24, 0, 30) })
 	end
 	local buy = row(58)
-	label(buy, ("Comprar ovo - %d moedas"):format(Config.EggCost), 16, COLORS.text, { Position = UDim2.fromOffset(12, 0), Size = UDim2.new(1, -150, 1, 0), TextYAlignment = Enum.TextYAlignment.Center })
-	local b = button(buy, "Comprar", state.coins >= Config.EggCost and COLORS.button or COLORS.buttonOff, UDim2.fromOffset(110, 38))
+	label(buy, ("Comprar ovo - %d moedas"):format((state.eggCost or Config.EggCost)), 16, COLORS.text, { Position = UDim2.fromOffset(12, 0), Size = UDim2.new(1, -150, 1, 0), TextYAlignment = Enum.TextYAlignment.Center })
+	local b = button(buy, "Comprar", state.coins >= (state.eggCost or Config.EggCost) and COLORS.button or COLORS.buttonOff, UDim2.fromOffset(110, 38))
 	b.Position = UDim2.new(1, -124, 0.5, -19)
 	b.MouseButton1Click:Connect(function() request("buyEgg") end)
 end
@@ -1952,5 +3065,374 @@ task.spawn(function()
 end)
 ]==] }
 make(c[1], c[2], c[3], SPS)
+
+local rc = { "LocalScript", "RetentionClient", [==[
+--!nonstrict
+-- Painel "Hoje" (retenção): recompensa diária, missões, metas, coleção, eventos e guia da loja.
+-- Só mostra o estado calculado pelo servidor (s.retention) e pede ações; não decide nada.
+-- Fica escondido até o primeiro ovo chocar, para não competir com o tutorial.
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared:WaitForChild("Config"))
+local Logic = require(Shared:WaitForChild("Logic"))
+
+local remotes = ReplicatedStorage:WaitForChild("DinoParkRemotes")
+local requestRF = remotes:WaitForChild("Request")
+local stateRE = remotes:WaitForChild("State")
+
+local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+local C = {
+	bg = Color3.fromRGB(34, 52, 40), panel = Color3.fromRGB(48, 72, 56), row = Color3.fromRGB(62, 90, 70),
+	button = Color3.fromRGB(88, 170, 96), off = Color3.fromRGB(110, 120, 112), danger = Color3.fromRGB(210, 90, 80),
+	text = Color3.fromRGB(245, 250, 240), muted = Color3.fromRGB(190, 205, 190), gold = Color3.fromRGB(255, 214, 90),
+	tab = Color3.fromRGB(70, 104, 80), tabOn = Color3.fromRGB(120, 190, 120),
+}
+
+local s = nil -- último estado do servidor
+local current = "daily"
+local busy = false
+local live = {} -- funções de contagem regressiva
+
+local function corner(inst, r)
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, r or 8)
+	c.Parent = inst
+end
+
+local function label(parent, text, size, color, props)
+	local l = Instance.new("TextLabel")
+	l.BackgroundTransparency = 1
+	l.Font = Enum.Font.GothamMedium
+	l.TextSize = size or 14
+	l.TextColor3 = color or C.text
+	l.Text = text
+	l.TextXAlignment = Enum.TextXAlignment.Left
+	l.TextWrapped = true
+	for k, v in pairs(props or {}) do
+		l[k] = v
+	end
+	l.Parent = parent
+	return l
+end
+
+local function button(parent, text, color, size)
+	local b = Instance.new("TextButton")
+	b.BackgroundColor3 = color or C.button
+	b.Font = Enum.Font.GothamBold
+	b.TextSize = 14
+	b.TextColor3 = C.text
+	b.Text = text
+	b.Size = size or UDim2.fromOffset(100, 32)
+	b.Parent = parent
+	corner(b, 8)
+	return b
+end
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "DinoParkToday"
+gui.ResetOnSpawn = false
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.Parent = playerGui
+
+local root = Instance.new("Frame")
+root.BackgroundTransparency = 1
+root.Size = UDim2.fromScale(1, 1)
+root.Parent = gui
+local scale = Instance.new("UIScale")
+scale.Parent = root
+local function updateScale()
+	local v = Workspace.CurrentCamera and Workspace.CurrentCamera.ViewportSize or Vector2.new(1000, 600)
+	scale.Scale = math.clamp(math.min(v.X / 900, v.Y / 560), 0.6, 1.25)
+	root.Size = UDim2.fromScale(1 / scale.Scale, 1 / scale.Scale)
+end
+updateScale()
+if Workspace.CurrentCamera then
+	Workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(updateScale)
+end
+
+local openBtn = button(root, "Hoje", C.button, UDim2.fromOffset(84, 40))
+openBtn.Position = UDim2.fromOffset(12, 78)
+openBtn.Visible = false
+local badge = label(openBtn, "", 12, C.bg, {
+	BackgroundTransparency = 0, BackgroundColor3 = C.gold, Size = UDim2.fromOffset(22, 22), Position = UDim2.new(1, -14, 0, -8),
+	TextXAlignment = Enum.TextXAlignment.Center, Font = Enum.Font.GothamBold, Visible = false,
+})
+corner(badge, 11)
+
+local panel = Instance.new("Frame")
+panel.BackgroundColor3 = C.panel
+panel.Position = UDim2.fromOffset(12, 124)
+panel.Size = UDim2.fromOffset(450, 340)
+panel.Visible = false
+panel.Parent = root
+corner(panel, 14)
+label(panel, "Hoje no parque", 20, C.text, { Position = UDim2.fromOffset(14, 8), Size = UDim2.new(1, -70, 0, 28), Font = Enum.Font.GothamBold })
+local closeBtn = button(panel, "X", C.danger, UDim2.fromOffset(30, 30))
+closeBtn.Position = UDim2.new(1, -40, 0, 8)
+
+local tabBar = Instance.new("Frame")
+tabBar.BackgroundTransparency = 1
+tabBar.Position = UDim2.fromOffset(10, 42)
+tabBar.Size = UDim2.new(1, -20, 0, 30)
+tabBar.Parent = panel
+local tabLayout = Instance.new("UIListLayout")
+tabLayout.FillDirection = Enum.FillDirection.Horizontal
+tabLayout.Padding = UDim.new(0, 4)
+tabLayout.Parent = tabBar
+
+local scroll = Instance.new("ScrollingFrame")
+scroll.BackgroundTransparency = 1
+scroll.BorderSizePixel = 0
+scroll.Position = UDim2.fromOffset(10, 78)
+scroll.Size = UDim2.new(1, -20, 1, -88)
+scroll.ScrollBarThickness = 6
+scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scroll.CanvasSize = UDim2.new()
+scroll.Parent = panel
+local list = Instance.new("UIListLayout")
+list.Padding = UDim.new(0, 6)
+list.SortOrder = Enum.SortOrder.LayoutOrder
+list.Parent = scroll
+
+local order = 0
+local function row(height)
+	order = order + 1
+	local f = Instance.new("Frame")
+	f.BackgroundColor3 = C.row
+	f.Size = UDim2.new(1, -8, 0, height)
+	f.LayoutOrder = order
+	f.Parent = scroll
+	corner(f, 8)
+	return f
+end
+
+local function note(text, height, color)
+	local f = row(height or 30)
+	label(f, text, 13, color or C.muted, { Position = UDim2.fromOffset(10, 0), Size = UDim2.new(1, -20, 1, 0), TextYAlignment = Enum.TextYAlignment.Center })
+	return f
+end
+
+local function clock(seconds)
+	seconds = math.max(0, math.floor(seconds))
+	return ("%d:%02d:%02d"):format(math.floor(seconds / 3600), math.floor(seconds / 60) % 60, seconds % 60)
+end
+
+local function request(action, payload)
+	if busy then
+		return
+	end
+	busy = true
+	task.spawn(function()
+		local ok, result = pcall(function()
+			return requestRF:InvokeServer(action, payload)
+		end)
+		busy = false
+		if ok and type(result) == "table" and result.message and result.message ~= "" and result.ok then
+			note(result.message, 30, C.gold) -- confirmação discreta; o servidor reenvia o estado logo em seguida
+		end
+	end)
+end
+
+-- Linha com texto, subtexto e botão opcional à direita.
+local function item(title, sub, btnText, btnOn, onClick, titleColor)
+	local f = row(54)
+	label(f, title, 15, titleColor or C.text, { Position = UDim2.fromOffset(10, 4), Size = UDim2.new(1, -120, 0, 22), Font = Enum.Font.GothamBold })
+	label(f, sub, 12, C.muted, { Position = UDim2.fromOffset(10, 26), Size = UDim2.new(1, -120, 0, 26) })
+	if btnText then
+		local b = button(f, btnText, btnOn and C.button or C.off, UDim2.fromOffset(96, 32))
+		b.Position = UDim2.new(1, -104, 0.5, -16)
+		if btnOn and onClick then
+			b.MouseButton1Click:Connect(onClick)
+		end
+	end
+	return f
+end
+
+local R = {}
+
+function R.daily(r)
+	note("Calendário de 7 recompensas. Sem pressa: se você faltar um dia, continua de onde parou.", 36)
+	for i, d in ipairs(r.daily.days) do
+		local state = d.claimed and "recebido" or (d.next and (r.daily.canClaim and "disponível agora" or "amanhã") or "")
+		item(("Dia %d"):format(i), d.label, nil, false, nil, d.claimed and C.muted or (d.next and C.gold or C.text))
+		local last = nil
+		for _, child in ipairs(scroll:GetChildren()) do
+			if child:IsA("Frame") then last = child end
+		end
+		if state ~= "" and last then
+			label(last, state, 12, d.next and C.gold or C.muted, { Position = UDim2.new(1, -110, 0, 4), Size = UDim2.fromOffset(100, 20), TextXAlignment = Enum.TextXAlignment.Right })
+		end
+	end
+	local f = row(46)
+	if r.daily.canClaim then
+		local b = button(f, "Receber recompensa de hoje", C.button, UDim2.new(1, -20, 0, 34))
+		b.Position = UDim2.fromOffset(10, 6)
+		b.MouseButton1Click:Connect(function() request("claimDaily") end)
+	else
+		local l = label(f, "", 14, C.muted, { Position = UDim2.fromOffset(10, 0), Size = UDim2.new(1, -20, 1, 0), TextYAlignment = Enum.TextYAlignment.Center })
+		live[#live + 1] = function() l.Text = "Hoje já foi recebido. Próxima em " .. clock(r.resetsAt - Workspace:GetServerTimeNow()) end
+	end
+	for _, h in ipairs(r.hints) do
+		note("Dica: " .. h, 30, C.text)
+	end
+end
+
+function R.quests(r)
+	local f = note("", 30)
+	local l = f:FindFirstChildOfClass("TextLabel")
+	live[#live + 1] = function() l.Text = "Missões do dia (novas em " .. clock(r.resetsAt - Workspace:GetServerTimeNow()) .. ")" end
+	for _, q in ipairs(r.quests) do
+		local text = q.claimed and "Recebido" or (q.done and "Receber" or "Em andamento")
+		local id = q.id
+		item(q.text, ("%d/%d  -  recompensa: %s"):format(q.progress, q.target, q.reward), text, q.done and not q.claimed, function() request("claimQuest", { id = id }) end)
+	end
+	item(r.bonus.text, "Complete e receba as 3 missões do dia.", r.bonus.claimed and "Recebido" or "Receber", r.bonus.available, function() request("claimQuestBonus") end, C.gold)
+end
+
+function R.goals(r)
+	note("Metas para jogar no seu ritmo. Nada expira e todas dão a recompensa uma única vez.", 36)
+	local tier = nil
+	for _, g in ipairs(r.goals) do
+		if g.tier ~= tier then
+			tier = g.tier
+			note(Config.GoalTierNames[tier], 24, C.gold)
+		end
+		local id = g.id
+		item(g.text, ("%d/%d  -  recompensa: %s"):format(g.progress, g.target, g.reward), g.claimed and "Recebido" or (g.done and "Receber" or "Em andamento"), g.done and not g.claimed, function() request("claimGoal", { id = id }) end)
+	end
+end
+
+function R.dex(r)
+	local n = 0
+	for _, d in ipairs(r.dex) do
+		if d.discovered then n = n + 1 end
+	end
+	note(("Coleção: %d de %d espécies descobertas. Novas espécies chegam em atualizações."):format(n, #r.dex), 36)
+	for _, d in ipairs(r.dex) do
+		if d.discovered then
+			item(d.name .. "  (" .. d.rarity .. ")", d.desc, nil, false, nil, Config.RarityColors[d.rarity])
+		else
+			item("???  (" .. d.rarity .. ")", "Ainda não descoberta. Choque ovos para encontrá-la.", nil, false, nil, C.muted)
+		end
+	end
+end
+
+function R.events(r)
+	note("O calendário é fixo, semana após semana. Nenhum evento é exclusivo: sempre volta.", 36)
+	if r.boost then
+		local f = note("", 30, C.gold)
+		local l = f:FindFirstChildOfClass("TextLabel")
+		live[#live + 1] = function() l.Text = ("Impulso de visitantes x%.1f ativo: %s"):format(r.boost.mult, clock(r.boost.endsAt - Workspace:GetServerTimeNow())) end
+	end
+	for _, ev in ipairs(r.events.active) do
+		local f = item("AGORA: " .. ev.name, ev.desc, nil, false, nil, C.gold)
+		local l = label(f, "", 12, C.gold, { Position = UDim2.new(1, -150, 0, 4), Size = UDim2.fromOffset(140, 20), TextXAlignment = Enum.TextXAlignment.Right })
+		live[#live + 1] = function() l.Text = "termina em " .. clock(ev.endsAt - Workspace:GetServerTimeNow()) end
+	end
+	for _, ev in ipairs(r.events.upcoming) do
+		local f = item("Em breve: " .. ev.name, ev.desc)
+		local l = label(f, "", 12, C.muted, { Position = UDim2.new(1, -150, 0, 4), Size = UDim2.fromOffset(140, 20), TextXAlignment = Enum.TextXAlignment.Right })
+		live[#live + 1] = function() l.Text = "começa em " .. clock(ev.startsAt - Workspace:GetServerTimeNow()) end
+	end
+	local days = {}
+	for _, ev in ipairs(Config.Events) do
+		local names = {}
+		for _, d in ipairs(ev.days) do names[#names + 1] = Config.WeekdayNames[d] end
+		days[#days + 1] = ev.name .. ": " .. table.concat(names, " e ")
+	end
+	note("Semana: " .. table.concat(days, "  |  "), 56)
+end
+
+function R.guide(_)
+	local g = Logic.storeGuide(Config)
+	note("O que cada compra dá, quanto dura e se pode repetir. Tudo se compra jogando, com moedas.", 36)
+	for _, e in ipairs(g.coins) do
+		item(e.name .. "  -  " .. e.price, e.grants .. "  Duração: " .. e.duration .. ". " .. e.repeatable .. ".")
+	end
+	if g.robuxEnabled then
+		for _, e in ipairs(g.robux) do
+			item(e.name .. "  -  " .. e.price, e.grants .. "  Duração: " .. e.duration .. ". " .. e.repeatable .. ".")
+		end
+	else
+		note("Não há compras com Robux neste jogo por enquanto. Tudo é alcançável jogando.", 36, C.gold)
+	end
+end
+
+local TABS = {
+	{ "daily", "Diário" }, { "quests", "Missões" }, { "goals", "Metas" }, { "dex", "Coleção" }, { "events", "Eventos" }, { "guide", "Loja" },
+}
+local tabButtons = {}
+for _, t in ipairs(TABS) do
+	local b = button(tabBar, t[2], C.tab, UDim2.fromOffset(68, 28))
+	b.TextSize = 12
+	tabButtons[t[1]] = b
+end
+
+local function render()
+	if not s or not s.retention then
+		return
+	end
+	local keep = scroll.CanvasPosition
+	for _, child in ipairs(scroll:GetChildren()) do
+		if not child:IsA("UIListLayout") then child:Destroy() end
+	end
+	live = {}
+	order = 0
+	for key, b in pairs(tabButtons) do
+		b.BackgroundColor3 = key == current and C.tabOn or C.tab
+	end
+	R[current](s.retention)
+	scroll.CanvasPosition = keep
+end
+
+for key, b in pairs(tabButtons) do
+	b.MouseButton1Click:Connect(function()
+		current = key
+		scroll.CanvasPosition = Vector2.new(0, 0)
+		render()
+		if key == "guide" then
+			request("track", { name = "store_guide_view" })
+		end
+	end)
+end
+
+openBtn.MouseButton1Click:Connect(function()
+	panel.Visible = not panel.Visible
+	if panel.Visible then
+		render()
+		request("track", { name = "today_view" })
+	end
+end)
+closeBtn.MouseButton1Click:Connect(function()
+	panel.Visible = false
+end)
+
+stateRE.OnClientEvent:Connect(function(state)
+	s = state
+	openBtn.Visible = (s.hatched or 0) >= 1 or s.tutorialDismissed == true
+	local n = s.retention and s.retention.claimable or 0
+	badge.Visible = n > 0
+	badge.Text = tostring(n)
+	if panel.Visible then
+		render()
+	end
+end)
+
+task.spawn(function()
+	while true do
+		task.wait(0.5)
+		if panel.Visible then
+			for _, fn in ipairs(live) do
+				fn()
+			end
+		end
+	end
+end)
+]==] }
+make(rc[1], rc[2], rc[3], SPS)
 
 print("[DinoPark] Parte 2 (scripts) instalada. Salve o lugar e pressione Play (F5).")

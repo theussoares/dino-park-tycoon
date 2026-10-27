@@ -63,3 +63,9 @@ Bugs encontrados e corrigidos (em `src/StarterPlayer/StarterPlayerScripts/DinoPa
 Ainda não verificado:
 - Uma "camada" verde com textura de folhas no alto das capturas de tela. Um raycast para cima a partir da câmera não acertou nenhuma peça; pode ser artefato da captura ou do material Grass. Precisa ser olhado no viewport.
 - Cliques reais nos botões, painéis abertos (só a barra/HUD/tutorial foram vistos), modelos dos dinos/decorações vistos de perto, escala < 1 (telas pequenas/mobile), DataStore real, multiplayer, BindToClose.
+
+## Retenção e economia (branch `claude/retention-monetization-e71094`)
+
+Executado em 2026-10-26 (Node, `luaparse`, `fengari`): `node tools/build.js && (cd tools && node check.js && node globals.js && node xref.js) && node tests/run_tests.js` → check 15/15, xref ok, **36 testes de lógica passam** (migração v1→v2, livro-razão, preço do ovo, eventos semanais e fuso, impulso, calendário diário sem punição, missões/metas anti-duplicação, recibos idempotentes, ofertas, guia da loja, funil, simulações de economia de 4 h e 24 h).
+
+**Não verificado:** Roblox Studio estava em Play de outra sessão e não foi interrompido, então o painel Hoje, `Telemetry`/AnalyticsService (nomes de API de memória), remotes novos, DataStore v2 em runtime e `MonetizationService` (desligado) **nunca rodaram**. As simulações de economia são consequência dos números de `Config`, não playtest. Sem multiplayer, mobile ou dados reais.

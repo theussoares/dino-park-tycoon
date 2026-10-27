@@ -258,7 +258,7 @@ local renderers = {}
 
 function renderers.egg()
 	panelTitle.Text = "Ovos e incubadora"
-	textRow(("Você tem %d ovo(s). Cada ovo custa %d moedas."):format(state.eggs, Config.EggCost), COLORS.text, 36)
+	textRow(("Você tem %d ovo(s). Cada ovo custa %d moedas."):format(state.eggs, (state.eggCost or Config.EggCost)), COLORS.text, 36)
 	local f = row(150)
 	label(f, "Chances ao chocar (o primeiro ovo é sempre um Leafling):", 14, COLORS.muted, { Position = UDim2.fromOffset(12, 6), Size = UDim2.new(1, -24, 0, 36) })
 	local y = 44
@@ -286,8 +286,8 @@ function renderers.egg()
 		label(inc, ("Incubação leva %ds."):format(state.incubateSeconds), 13, COLORS.muted, { Position = UDim2.fromOffset(12, 56), Size = UDim2.new(1, -24, 0, 30) })
 	end
 	local buy = row(58)
-	label(buy, ("Comprar ovo - %d moedas"):format(Config.EggCost), 16, COLORS.text, { Position = UDim2.fromOffset(12, 0), Size = UDim2.new(1, -150, 1, 0), TextYAlignment = Enum.TextYAlignment.Center })
-	local b = button(buy, "Comprar", state.coins >= Config.EggCost and COLORS.button or COLORS.buttonOff, UDim2.fromOffset(110, 38))
+	label(buy, ("Comprar ovo - %d moedas"):format((state.eggCost or Config.EggCost)), 16, COLORS.text, { Position = UDim2.fromOffset(12, 0), Size = UDim2.new(1, -150, 1, 0), TextYAlignment = Enum.TextYAlignment.Center })
+	local b = button(buy, "Comprar", state.coins >= (state.eggCost or Config.EggCost) and COLORS.button or COLORS.buttonOff, UDim2.fromOffset(110, 38))
 	b.Position = UDim2.new(1, -124, 0.5, -19)
 	b.MouseButton1Click:Connect(function() request("buyEgg") end)
 end

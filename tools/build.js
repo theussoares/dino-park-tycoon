@@ -12,12 +12,15 @@ const shared = [
   ["ModuleScript", "DinoModels", "src/ReplicatedStorage/Shared/DinoModels.lua"],
 ];
 const services = [
+  ["ModuleScript", "Telemetry", "src/ServerScriptService/DinoParkServices/Telemetry.lua"],
+  ["ModuleScript", "MonetizationService", "src/ServerScriptService/DinoParkServices/MonetizationService.lua"],
   ["ModuleScript", "DataService", "src/ServerScriptService/DinoParkServices/DataService.lua"],
   ["ModuleScript", "ParkService", "src/ServerScriptService/DinoParkServices/ParkService.lua"],
   ["ModuleScript", "GameService", "src/ServerScriptService/DinoParkServices/GameService.lua"],
 ];
 const main = ["Script", "DinoParkMain", "src/ServerScriptService/DinoParkMain.server.lua"];
 const client = ["LocalScript", "DinoParkClient", "src/StarterPlayer/StarterPlayerScripts/DinoParkClient.client.lua"];
+const retentionClient = ["LocalScript", "RetentionClient", "src/StarterPlayer/StarterPlayerScripts/RetentionClient.client.lua"];
 
 function lit(src, file) {
   for (let level = 2; level < 8; level++) {
@@ -42,7 +45,7 @@ local SPS = StarterPlayer:FindFirstChild("StarterPlayerScripts") or StarterPlaye
 assert(SPS, "[DinoPark] StarterPlayerScripts não encontrado")
 
 local targets = {
-	{ RS, "Shared" }, { SSS, "DinoParkServices" }, { SSS, "DinoParkMain" }, { SPS, "DinoParkClient" },
+	{ RS, "Shared" }, { SSS, "DinoParkServices" }, { SSS, "DinoParkMain" }, { SPS, "DinoParkClient" }, { SPS, "RetentionClient" },
 }
 for _, t in ipairs(targets) do
 	local found = t[1]:FindFirstChild(t[2])
@@ -84,6 +87,9 @@ make(m[1], m[2], m[3], SSS)
 
 local c = ${entry(...client)}
 make(c[1], c[2], c[3], SPS)
+
+local rc = ${entry(...retentionClient)}
+make(rc[1], rc[2], rc[3], SPS)
 
 print("[DinoPark] Parte 2 (scripts) instalada. Salve o lugar e pressione Play (F5).")
 `;
