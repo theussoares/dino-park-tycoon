@@ -13,6 +13,7 @@ Data da pesquisa: 2026-10-26. Só conto como "verificado" o que consegui abrir e
 | Asset | Criador | Preço observado | Licença | Formato | Link | Status |
 |---|---|---|---|---|---|---|
 | Animated LowPoly Dinosaurs ("Dinosaur Animated Pack - Dec 2018") | Quaternius | "Name your own price" — baixado por $0 | CC0 1.0 (texto da página: "FBX, OBJ and Blend formats and CC0 license"; `License.txt` dentro do ZIP confirma CC0 1.0) | FBX/OBJ/Blend; 6 dinos rigged com idle, walk, run, attack, jump, death | https://quaternius.itch.io/animated-lowpoly-dinosaurs | **Baixado** (10 MB, SHA-256 do ZIP `d9ca7d35…8931c`). FBX em `assets/quaternius-dinosaurs/`. **Não importado no Roblox.** |
+| 3D Voxel Park Pack (OBJ) | MariaIsMe (itch.io) | Fornecido pelo usuário | **CC BY 4.0** (README.txt do ZIP) — exige **atribuição** ao criador | OBJ+MTL+PNG; animais, bikes, folhagem, mobiliário, piquenique, playground | (ZIP enviado pelo usuário) | **Guardado em `assets/voxel-park-pack/`. Não importado no Roblox.** Link original do itch.io não verificado. |
 | 150+ LowPoly Nature Models | Quaternius | "Name your own price" (página lida) | CC0 (página: "CC0 License as always") | Blend/FBX/OBJ; árvores, cactos, pedras, arbustos, troncos, plantas | https://quaternius.itch.io/150-lowpoly-nature-models | **Aprovado como candidato; NÃO baixado, NÃO importado.** |
 
 Dinossauros no pack: Apatosaurus, Parasaurolophus, Stegosaurus, T-Rex, Triceratops, Velociraptor (conferido na lista de arquivos do ZIP).
