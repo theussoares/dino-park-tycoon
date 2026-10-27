@@ -386,6 +386,28 @@ function Logic.remove(data, cfg, dinoId)
 	return false, "Ele não está no habitat."
 end
 
+-- Próximo passo do onboarding: primeira missão ainda não concluída (ordem de Config.Missions), ou nil.
+-- 'view' é o estado enviado ao cliente (campo missions); usado só para orientar a interface.
+function Logic.currentGoal(view, cfg)
+	for _, m in ipairs(cfg.Missions) do
+		if view.missions[m.id] ~= true then
+			return { id = m.id, text = m.text, reward = m.reward }
+		end
+	end
+	return nil
+end
+
+-- Melhoria mais barata que ainda não está no máximo (view.upgrades[i].cost é false no máximo), ou nil.
+function Logic.nextUpgrade(view)
+	local best = nil
+	for _, up in ipairs(view.upgrades) do
+		if up.cost and (best == nil or up.cost < best.cost) then
+			best = up
+		end
+	end
+	return best
+end
+
 -- Missões simples (recompensa única). Devolve lista de textos completados agora.
 function Logic.checkMissions(data, cfg)
 	local done = {}

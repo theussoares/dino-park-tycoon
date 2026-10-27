@@ -81,3 +81,38 @@ Ainda não verificado:
 - Console sem erros além do aviso esperado de DataStore.
 
 **NÃO verificado no Studio:** as mudanças do cliente (bugs 3 e 5) — só passaram nos checadores de sintaxe/xref; a causa do bug 3 é hipótese (painel recriado por push de estado entre apertar e soltar), não foi reproduzida. Paredes leste/oeste/norte não foram testadas por pulo (mesma construção). `installer/*` regerados por `tools/build.js`; os scripts no place foram atualizados à mão via MCP apenas para servidor/Config/cenário.
+
+## UI/UX redesign (2026-10-26, branch claude/ui-ux-redesign-d5c61e)
+Ver `UI_UX_AUDIT.md` para o escopo completo.
+
+Executado (sem Studio):
+- `node tools/build.js`, `tools/check.js`, `tools/globals.js`, `tools/xref.js`, `tests/run_tests.js` → 16 passam, 0 falham (2 testes novos: `currentGoal`, `nextUpgrade`).
+
+Executado no Studio ("Place1", modo Edit sem Play no início; a outra sessão não estava em Play):
+- `Logic` e o `Source` de `DinoParkClient` substituídos pela versão nova (conteúdo de `src/`), depois ajuste de layout (`gui.AbsoluteSize`) aplicado no Studio e no repo.
+- Play iniciado e parado por esta sessão. Capturas: HUD, objetivo, próxima melhoria, barra inferior com badges — visíveis e centralizadas após a correção do inset da barra superior do Roblox (a barra antes ficava 58 px abaixo da tela).
+- Console: só `DataStore indisponível` (esperado, lugar não publicado) e `Servidor iniciado`. Nenhum erro de script no momento da captura.
+
+NÃO verificado no Studio:
+- Clique real nos botões. Os cliques de mouse via MCP (`user_mouse_input`) não abriram o painel "Ovo" (duas tentativas, mesmo com coordenadas conferidas pelo `AbsolutePosition` do botão). `firesignal` não está disponível no contexto do cliente. Portanto painéis, incubação, compra, revelação e loja NÃO foram testados ao vivo.
+- Layout em celular (390×844 e 844×390) e DataStore real.
+- Som da revelação: nunca ouvido.
+
+## Merge da UI na main + cliques reais no Studio (2026-10-26)
+Merge de `claude/ui-ux-redesign-d5c61e` na main. Conflito no cliente resolvido com a versão da branch mais a correção do bug 3 do playtest (`renderSafe`: o painel não é reconstruído enquanto o ponteiro está pressionado). O bug 5 já não existe no layout novo ("Comprar ovo" vem antes das chances). Build, checadores e 16 testes passam.
+
+Studio (Place1): o `DinoParkClient` e o `Config` do place foram atualizados e conferidos por checksum contra `src/` (cliente 36835 bytes, Config 4449). Play iniciado e parado por esta sessão. Cliques reais com `user_mouse_input`, um por ação, todos funcionaram no primeiro clique:
+- Ovo abre "Ovo e incubadora".
+- Incubar mostra "Chocando... 0:11" e o aviso "Ovo na incubadora!".
+- Coletar paga a missão (+50) e mostra a revelação "NOVO DINOSSAURO! Leafling · COMUM".
+- "Colocar no habitat" paga a missão (+75) e o objetivo passa a "Compre uma melhoria".
+- Melhorias → "Mais visitantes" (100) sobe para o nível 1/5, mostra "Renda: +25% → +50%" e paga a missão (+100).
+- Loja: "Canteiro de flores" (45) muda o botão para "Na coleção".
+- Coleção mostra o card do Leafling "No habitat" com "Guardar".
+- Fechar fecha o painel.
+- Missões mostra "Concluídas: 3 de 3".
+- Console: só os avisos esperados (DataStore indisponível, Servidor iniciado).
+
+Nota de método: o `user_mouse_input` usa as mesmas coordenadas do `AbsolutePosition` (centro do botão), **sem** somar os 58 px da barra superior. Com o deslocamento somado, o clique erra o botão, e isso provavelmente explica o "clique não abriu" da sessão de UI.
+
+Ainda NÃO verificado: Guardar, revelação com "Guardar para depois", habitat cheio, layout em celular/retrato, som da revelação, DataStore real, multiplayer. UX: com as missões concluídas, "Próximo passo" e "Próxima melhoria" mostram a mesma informação.
