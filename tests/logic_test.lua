@@ -174,5 +174,21 @@ test("trava de sessão: outro servidor, expiração e liberação", function()
 	local d = Logic.migrate(rec, Config, 1100); eq(d._lock, nil)
 end)
 
+test("currentGoal: segue a ordem das missões; nil quando todas concluídas", function()
+	local v = { missions = { hatch = false, place = false, upgrade = false } }
+	eq(Logic.currentGoal(v, Config).id, "hatch")
+	v.missions.hatch = true
+	eq(Logic.currentGoal(v, Config).id, "place"); eq(Logic.currentGoal(v, Config).reward, 75)
+	v.missions.place = true; v.missions.upgrade = true
+	eq(Logic.currentGoal(v, Config), nil)
+end)
+
+test("nextUpgrade: menor custo entre os não máximos; nil se todas no máximo", function()
+	local v = { upgrades = { { key = "slots", level = 0, cost = 150 }, { key = "income", level = 0, cost = 100 }, { key = "incubator", level = 3, cost = false } } }
+	eq(Logic.nextUpgrade(v).key, "income")
+	v.upgrades[1].cost = false; v.upgrades[2].cost = false
+	eq(Logic.nextUpgrade(v), nil)
+end)
+
 print(("RESULTADO: %d passaram, %d falharam"):format(passed, failed))
 if failed > 0 then error("testes falharam") end

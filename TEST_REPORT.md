@@ -63,3 +63,19 @@ Bugs encontrados e corrigidos (em `src/StarterPlayer/StarterPlayerScripts/DinoPa
 Ainda não verificado:
 - Uma "camada" verde com textura de folhas no alto das capturas de tela. Um raycast para cima a partir da câmera não acertou nenhuma peça; pode ser artefato da captura ou do material Grass. Precisa ser olhado no viewport.
 - Cliques reais nos botões, painéis abertos (só a barra/HUD/tutorial foram vistos), modelos dos dinos/decorações vistos de perto, escala < 1 (telas pequenas/mobile), DataStore real, multiplayer, BindToClose.
+
+## UI/UX redesign (2026-10-26, branch claude/ui-ux-redesign-d5c61e)
+Ver `UI_UX_AUDIT.md` para o escopo completo.
+
+Executado (sem Studio):
+- `node tools/build.js`, `tools/check.js`, `tools/globals.js`, `tools/xref.js`, `tests/run_tests.js` → 16 passam, 0 falham (2 testes novos: `currentGoal`, `nextUpgrade`).
+
+Executado no Studio ("Place1", modo Edit sem Play no início; a outra sessão não estava em Play):
+- `Logic` e o `Source` de `DinoParkClient` substituídos pela versão nova (conteúdo de `src/`), depois ajuste de layout (`gui.AbsoluteSize`) aplicado no Studio e no repo.
+- Play iniciado e parado por esta sessão. Capturas: HUD, objetivo, próxima melhoria, barra inferior com badges — visíveis e centralizadas após a correção do inset da barra superior do Roblox (a barra antes ficava 58 px abaixo da tela).
+- Console: só `DataStore indisponível` (esperado, lugar não publicado) e `Servidor iniciado`. Nenhum erro de script no momento da captura.
+
+NÃO verificado no Studio:
+- Clique real nos botões. Os cliques de mouse via MCP (`user_mouse_input`) não abriram o painel "Ovo" (duas tentativas, mesmo com coordenadas conferidas pelo `AbsolutePosition` do botão). `firesignal` não está disponível no contexto do cliente. Portanto painéis, incubação, compra, revelação e loja NÃO foram testados ao vivo.
+- Layout em celular (390×844 e 844×390) e DataStore real.
+- Som da revelação: nunca ouvido.
