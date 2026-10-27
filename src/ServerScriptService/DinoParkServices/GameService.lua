@@ -167,7 +167,7 @@ function handlers.collect(player, session)
 end
 
 function handlers.place(player, session, payload)
-	local ok, msg = Logic.place(session.data, Config, payload and payload.id)
+	local ok, msg = Logic.place(session.data, Config, payload and payload.id, os.time())
 	if ok then commit(player, session, true) end
 	return ok, msg
 end
@@ -179,7 +179,7 @@ function handlers.remove(player, session, payload)
 end
 
 function handlers.buyUpgrade(player, session, payload)
-	local ok, msg = Logic.buyUpgrade(session.data, Config, payload and payload.key)
+	local ok, msg = Logic.buyUpgrade(session.data, Config, payload and payload.key, os.time())
 	if ok then commit(player, session, true) end
 	return ok, msg
 end
@@ -375,6 +375,7 @@ function GameService.start()
 		while true do
 			task.wait(Config.IncomeInterval)
 			for player, session in pairs(DataService.sessions()) do
+				Logic.rollDay(session.data, Config, os.time()) -- fecha o dia antes de somar a renda (base das missões)
 				local tick = Logic.incomePerTick(session.data, Config, os.time())
 				if tick > 0 then
 					Logic.earn(session.data, tick, "income")

@@ -210,7 +210,8 @@ Config.Offers = {
 -- Os ids 0 são marcadores; só preencha depois do loop estar testado no Studio com DataStore e multiplayer.
 Config.Monetization = {
 	Enabled = false,
-	MaxReceipts = 200,
+	MaxReceipts = 2000, -- teto de segurança; a poda principal é por idade (ReceiptKeepSeconds)
+	ReceiptKeepSeconds = 30 * 86400, -- recibos ficam reconhecidos por 30 dias (bem acima da janela de reenvio do Roblox)
 	Passes = {
 		auto_collect = { id = "auto_collect", name = "Coleta automática", priceRobux = 199, gamePassId = 0, repeatable = false,
 			grants = "Coleta o ovo chocado sozinho quando você está no jogo. Não aumenta renda nem sorte.", duration = "Permanente" },
@@ -252,6 +253,13 @@ local Logic = {}
 
 local function floor(x)
 	return math.floor(x)
+end
+
+-- Fecha o dia de jogo antes de qualquer mudança de estatística: a base das missões diárias tem que ser de antes da ação.
+local function syncDay(data, cfg, now)
+	if now then
+		Logic.rollDay(data, cfg, now)
+	end
 end
 
 function Logic.newData(cfg, now)
@@ -320,6 +328,13 @@ function Logic.migrate(raw, cfg, now)
 			end
 		end
 	end
+	-- nextId nunca pode ficar abaixo do maior id já existente (evita ids repetidos ao coletar)
+	for _, dino in ipairs(d.dinos) do
+		local n = tonumber(dino.id:match("^d(%d+)$"))
+		if n and n + 1 > d.nextId then
+			d.nextId = floor(n + 1)
+		end
+	end
 	if type(raw.upgrades) == "table" then
 		for key, def in pairs(cfg.Upgrades) do
 			d.upgrades[key] = floor(num(raw.upgrades[key], 0, 0, def.maxLevel))
@@ -332,7 +347,8 @@ function Logic.migrate(raw, cfg, now)
 			end
 		end
 	end
-	if raw.fence == "wood" or d.owned[raw.fence or ""] then
+	local fenceItem = type(raw.fence) == "string" and Logic.catalogItem(cfg, raw.fence) or nil
+	if raw.fence == "wood" or (fenceItem and fenceItem.kind == "fence" and d.owned[raw.fence]) then
 		d.fence = raw.fence
 	end
 	if type(raw.placed) == "table" then
@@ -345,8 +361,9 @@ function Logic.migrate(raw, cfg, now)
 			end
 		end
 	end
-	if type(raw.incubating) == "table" and type(raw.incubating.readyAt) == "number" then
-		d.incubating = { startedAt = num(raw.incubating.startedAt, now, 0, now), readyAt = raw.incubating.readyAt }
+	local readyAt = type(raw.incubating) == "table" and raw.incubating.readyAt or nil
+	if type(readyAt) == "number" and readyAt == readyAt and readyAt < math.huge and readyAt > -math.huge then
+		d.incubating = { startedAt = num(raw.incubating.startedAt, now, 0, now), readyAt = readyAt }
 	end
 	if type(raw.missions) == "table" then
 		for k in pairs(d.missions) do
@@ -449,6 +466,10 @@ function Logic.lockedByOther(old, jobId, now, lockSeconds)
 		return false
 	end
 	if l.jobId == jobId then
+		return false
+	end
+	-- carimbo além de lockSeconds no futuro = relógio de outro servidor errado: não pode travar o perfil para sempre
+	if l.t > now + lockSeconds then
 		return false
 	end
 	return now - l.t < lockSeconds
@@ -606,6 +627,7 @@ local function listHas(list, v)
 end
 
 function Logic.buyShop(data, cfg, itemId, stock, now)
+	syncDay(data, cfg, now)
 	if type(itemId) ~= "string" then
 		return false, "Item inválido."
 	end
@@ -641,7 +663,8 @@ function Logic.upgradeCost(data, cfg, key)
 	return def.costs[level + 1]
 end
 
-function Logic.buyUpgrade(data, cfg, key)
+function Logic.buyUpgrade(data, cfg, key, now)
+	syncDay(data, cfg, now)
 	if type(key) ~= "string" or not cfg.Upgrades[key] then
 		return false, "Melhoria inválida."
 	end
@@ -659,6 +682,7 @@ function Logic.buyUpgrade(data, cfg, key)
 end
 
 function Logic.buyEgg(data, cfg, now)
+	syncDay(data, cfg, now)
 	if data.eggs >= cfg.MaxEggs then
 		return false, "Você já tem ovos demais."
 	end
@@ -685,6 +709,7 @@ function Logic.startIncubate(data, cfg, now)
 end
 
 function Logic.collect(data, cfg, now, rnd)
+	syncDay(data, cfg, now)
 	local inc = data.incubating
 	if not inc then
 		return false, "Nada para coletar."
@@ -710,7 +735,8 @@ function Logic.collect(data, cfg, now, rnd)
 	return true, "Nasceu um " .. cfg.Species[species].name .. "!", species
 end
 
-function Logic.place(data, cfg, dinoId)
+function Logic.place(data, cfg, dinoId, now)
+	syncDay(data, cfg, now)
 	if type(dinoId) ~= "string" or #dinoId > 32 then
 		return false, "Dinossauro inválido."
 	end
@@ -771,7 +797,7 @@ function Logic.checkMissions(data, cfg)
 		Logic.earn(data, m.reward, "mission")
 		done[#done + 1] = { text = m.text, reward = m.reward }
 	end
-	local upgraded = data.upgrades.slots + data.upgrades.income + data.upgrades.incubator > 0
+	local upgraded = data.upgrades.slots + data.upgrades.income + data.upgrades.incubator + data.upgrades.renovation > 0
 	for _, m in ipairs(cfg.Missions) do
 		if not data.missions[m.id] then
 			if m.id == "hatch" and data.hatched > 0 then
@@ -972,7 +998,8 @@ end
 
 function Logic.rollDay(data, cfg, now)
 	local today = Logic.dayIndex(cfg, now)
-	if data.daily.day == today then
+	-- só avança o dia; relógio voltando não zera missões já recebidas
+	if data.daily.day >= today then
 		return false
 	end
 	local base = {}
@@ -1133,7 +1160,7 @@ end
 function Logic.claimDaily(data, cfg, now)
 	local today = Logic.dayIndex(cfg, now)
 	local l = data.login
-	if l.lastClaimDay == today then
+	if l.lastClaimDay >= today then
 		return false, "Você já recebeu hoje. Volte amanhã!"
 	end
 	local r = cfg.DailyRewards[l.cycle + 1]
@@ -1228,7 +1255,14 @@ function Logic.markOfferShown(data, cfg, now)
 end
 
 -- ===== Compras (desligadas): concessão idempotente por recibo =====
-local function pruneReceipts(data, cfg)
+local function pruneReceipts(data, cfg, now)
+	-- primeiro, recibos fora da janela de reenvio do Roblox (podar antes disso reabriria a concessão)
+	for id, t in pairs(data.receipts) do
+		if t < now - cfg.Monetization.ReceiptKeepSeconds then
+			data.receipts[id] = nil
+		end
+	end
+	-- teto de segurança de tamanho (só age com um volume absurdo de compras dentro da janela)
 	local n = 0
 	for _ in pairs(data.receipts) do
 		n = n + 1
@@ -1264,7 +1298,7 @@ function Logic.processReceipt(data, cfg, receiptId, productKey, now)
 		Logic.grantBoost(data, cfg, product.boostMult, product.boostSeconds, now)
 	end
 	data.receipts[receiptId] = now
-	pruneReceipts(data, cfg)
+	pruneReceipts(data, cfg, now)
 	return "granted"
 end
 
@@ -2341,7 +2375,7 @@ function handlers.collect(player, session)
 end
 
 function handlers.place(player, session, payload)
-	local ok, msg = Logic.place(session.data, Config, payload and payload.id)
+	local ok, msg = Logic.place(session.data, Config, payload and payload.id, os.time())
 	if ok then commit(player, session, true) end
 	return ok, msg
 end
@@ -2353,7 +2387,7 @@ function handlers.remove(player, session, payload)
 end
 
 function handlers.buyUpgrade(player, session, payload)
-	local ok, msg = Logic.buyUpgrade(session.data, Config, payload and payload.key)
+	local ok, msg = Logic.buyUpgrade(session.data, Config, payload and payload.key, os.time())
 	if ok then commit(player, session, true) end
 	return ok, msg
 end
@@ -2549,6 +2583,7 @@ function GameService.start()
 		while true do
 			task.wait(Config.IncomeInterval)
 			for player, session in pairs(DataService.sessions()) do
+				Logic.rollDay(session.data, Config, os.time()) -- fecha o dia antes de somar a renda (base das missões)
 				local tick = Logic.incomePerTick(session.data, Config, os.time())
 				if tick > 0 then
 					Logic.earn(session.data, tick, "income")

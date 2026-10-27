@@ -414,7 +414,9 @@ test("recibos: idempotentes (mesmo recibo não concede 2x), produto desconhecido
 	eq(Logic.processReceipt(d, Config, 5, "eggs_3", MON), "invalid")
 	for i = 1, 300 do Logic.processReceipt(d, Config, "x" .. i, "eggs_3", MON + i) end
 	local n = 0; for _ in pairs(d.receipts) do n = n + 1 end
-	eq(n, Config.Monetization.MaxReceipts); eq(d.receipts.x300 ~= nil, true, "mantém os mais novos"); eq(d.receipts.r1, nil)
+	eq(n, 302, "dentro da janela de 30 dias nada é podado (r1, r2 + 300)"); eq(d.receipts.r1 ~= nil, true, "recibo antigo ainda reconhecido")
+	Logic.processReceipt(d, Config, "novo", "eggs_3", MON + Config.Monetization.ReceiptKeepSeconds + 10)
+	eq(d.receipts.r1, nil, "recibo além da janela de 30 dias é podado")
 end)
 
 test("passes: concessão idempotente e cosmético do Fundador", function()

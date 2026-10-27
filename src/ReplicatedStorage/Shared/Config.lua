@@ -171,7 +171,8 @@ Config.Offers = {
 -- Os ids 0 são marcadores; só preencha depois do loop estar testado no Studio com DataStore e multiplayer.
 Config.Monetization = {
 	Enabled = false,
-	MaxReceipts = 200,
+	MaxReceipts = 2000, -- teto de segurança; a poda principal é por idade (ReceiptKeepSeconds)
+	ReceiptKeepSeconds = 30 * 86400, -- recibos ficam reconhecidos por 30 dias (bem acima da janela de reenvio do Roblox)
 	Passes = {
 		auto_collect = { id = "auto_collect", name = "Coleta automática", priceRobux = 199, gamePassId = 0, repeatable = false,
 			grants = "Coleta o ovo chocado sozinho quando você está no jogo. Não aumenta renda nem sorte.", duration = "Permanente" },

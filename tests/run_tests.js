@@ -9,9 +9,13 @@ for (const [name, file] of [["SRC_CONFIG", "src/ReplicatedStorage/Shared/Config.
   lua.lua_pushstring(L, to_luastring(fs.readFileSync(path.join(root, file), "utf8")));
   lua.lua_setglobal(L, to_luastring(name));
 }
-const code = fs.readFileSync(path.join(__dirname, "logic_test.lua"), "utf8");
-const status = lauxlib.luaL_dostring(L, to_luastring(code));
-if (status !== lua.LUA_OK) {
-  console.log("ERRO: " + lua.lua_tojsstring(L, -1));
-  process.exit(1);
+let exitCode = 0;
+for (const file of ["logic_test.lua", "fluxos_test.lua"]) {
+  const code = fs.readFileSync(path.join(__dirname, file), "utf8");
+  const status = lauxlib.luaL_dostring(L, to_luastring(code));
+  if (status !== lua.LUA_OK) {
+    console.log("ERRO em " + file + ": " + lua.lua_tojsstring(L, -1));
+    exitCode = 1;
+  }
 }
+process.exit(exitCode);
